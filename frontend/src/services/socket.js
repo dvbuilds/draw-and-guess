@@ -80,3 +80,7 @@ export function startGameSocket() {
 export function nextTurnSocket() {
   return emitWithAck('game:next_turn', {});
 }
+
+export function selectWordSocket(wordId) {
+  return emitWithAck('word:select', { wordId });
+}

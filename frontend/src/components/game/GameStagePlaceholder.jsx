@@ -3,6 +3,7 @@ import { Badge, Button, Card } from '../ui/index.js';
 export function GameStagePlaceholder({
   isCurrentDrawer,
   currentDrawer,
+  wordPhase = 'idle',
   isHost,
   hostPlayer,
   isSocketConnected,
@@ -12,9 +13,17 @@ export function GameStagePlaceholder({
   onAdvanceTurn,
   error,
 }) {
+  const stageHeadline = isCurrentDrawer
+    ? wordPhase === 'selected'
+      ? 'Word selected — drawing canvas arrives in the next phase'
+      : 'Pick one of your word options above to begin'
+    : wordPhase === 'selected'
+      ? `${currentDrawer?.displayName || 'Drawer'} has selected a word`
+      : `Waiting for ${currentDrawer?.displayName || 'the drawer'} to select a word`;
+
   return (
     <div className="space-y-6">
-      {/* Main Canvas Stage Placeholder (no drawing/word tools in Phase 5) */}
+      {/* Main Canvas Stage Placeholder (no drawing/guessing/scoring/timers in Phase 6) */}
       <Card variant="elevated" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
           <div>
@@ -25,10 +34,10 @@ export function GameStagePlaceholder({
                 : `${currentDrawer?.displayName || 'The active drawer'} has the turn.`}
             </p>
           </div>
-          <Badge variant="indigo">Phase 5 · Game Initialization</Badge>
+          <Badge variant="indigo">Phase 6 · Word Management</Badge>
         </div>
 
-        <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/70 p-6 text-center">
+        <div className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/70 p-6 text-center">
           <span
             aria-hidden="true"
             className="flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-indigo-200 bg-indigo-50 text-2xl text-indigo-600"
@@ -36,14 +45,10 @@ export function GameStagePlaceholder({
             ✎
           </span>
           <div className="space-y-1 max-w-md">
-            <p className="text-sm font-extrabold text-slate-800">
-              {isCurrentDrawer
-                ? 'Drawing canvas ready for your turn'
-                : `Watching ${currentDrawer?.displayName || 'drawer'}'s turn`}
-            </p>
+            <p className="text-sm font-extrabold text-slate-800">{stageHeadline}</p>
             <p className="text-xs text-slate-500">
-              Word selection, live drawing tools, guessing chat, timers, and scoring will
-              be enabled in upcoming phases.
+              Live drawing tools, guessing chat, timers, and scoring will be enabled in
+              upcoming phases.
             </p>
           </div>
         </div>

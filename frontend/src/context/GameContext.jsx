@@ -2,7 +2,11 @@ import { createContext, useCallback, useEffect, useMemo, useRef, useState } from
 import { usePlayer } from '../hooks/usePlayer.js';
 import { useRoom } from '../hooks/useRoom.js';
 import { useSocket } from '../hooks/useSocket.js';
-import { nextTurnSocket, startGameSocket } from '../services/socket.js';
+import {
+  nextTurnSocket,
+  selectWordSocket,
+  startGameSocket,
+} from '../services/socket.js';
 
 export const GameContext = createContext(null);
 
@@ -18,6 +22,13 @@ const INITIAL_GAME_STATE = {
   lastTurnReason: null,
 };
 
+const INITIAL_WORD_STATE = {
+  phase: 'idle', // idle | choosing | selected
+  options: [], // drawer-only word choices
+  assignedWord: null, // drawer-only { wordId, word, category, wordLength, pattern }
+  publicWord: null, // non-drawer { drawerPlayerId, wordLength, pattern, safeHints, wordMode }
+};
+
 function createLogEntry(type, message) {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -27,18 +38,26 @@ function createLogEntry(type, message) {
   };
 }
 
+function turnKeyOf(round, turn, drawerId) {
+  if (round == null || turn == null || !drawerId) return null;
+  return `${round}:${turn}:${drawerId}`;
+}
+
 export function GameProvider({ children }) {
   const { playerId } = usePlayer();
   const { socket, isConnected } = useSocket();
   const { roomCode, players, syncedGameState, syncPlayers } = useRoom();
 
   const [gameState, setGameState] = useState(INITIAL_GAME_STATE);
+  const [wordState, setWordState] = useState(INITIAL_WORD_STATE);
   const [gameLog, setGameLog] = useState([]);
   const [isStartingGame, setIsStartingGame] = useState(false);
   const [isAdvancingTurn, setIsAdvancingTurn] = useState(false);
+  const [isSelectingWord, setIsSelectingWord] = useState(false);
   const [error, setError] = useState(null);
 
   const lastLogKeyRef = useRef(null);
+  const currentTurnKeyRef = useRef(null);
   const previousRoomCodeRef = useRef(roomCode);
 
   const appendLog = useCallback((dedupeKey, type, message) => {
@@ -49,12 +68,13 @@ export function GameProvider({ children }) {
 
   const resetGameState = useCallback(() => {
     setGameState(INITIAL_GAME_STATE);
+    setWordState(INITIAL_WORD_STATE);
     setGameLog([]);
     setError(null);
     lastLogKeyRef.current = null;
+    currentTurnKeyRef.current = null;
   }, []);
 
-  // Reset game state whenever the active room changes or is cleared
   useEffect(() => {
     if (previousRoomCodeRef.current !== roomCode) {
       previousRoomCodeRef.current = roomCode;
@@ -65,6 +85,15 @@ export function GameProvider({ children }) {
   // Hydrate game state returned by lobby:join ack (e.g., on reconnect or page reload)
   useEffect(() => {
     if (!syncedGameState) return;
+    const nextKey = turnKeyOf(
+      syncedGameState.currentRound,
+      syncedGameState.currentTurn,
+      syncedGameState.currentDrawerPlayerId
+    );
+    if (nextKey && nextKey !== currentTurnKeyRef.current) {
+      currentTurnKeyRef.current = nextKey;
+      setWordState(INITIAL_WORD_STATE);
+    }
     setGameState((prev) => ({
       ...prev,
       status: syncedGameState.status || prev.status,
@@ -82,12 +111,23 @@ export function GameProvider({ children }) {
       if (Array.isArray(payload.players)) {
         syncPlayers(payload.players);
       }
+      const round = payload.currentRound ?? 1;
+      const turn = payload.currentTurn ?? 1;
+      const drawerId = payload.currentDrawerPlayerId ?? null;
+      const nextKey = turnKeyOf(round, turn, drawerId);
+
+      // Only reset word state when entering a new turn (prevents ack wiping word_options)
+      if (nextKey !== currentTurnKeyRef.current) {
+        currentTurnKeyRef.current = nextKey;
+        setWordState(INITIAL_WORD_STATE);
+      }
+
       setGameState({
         status: payload.status || 'started',
-        currentRound: payload.currentRound ?? 1,
-        currentTurn: payload.currentTurn ?? 1,
+        currentRound: round,
+        currentTurn: turn,
         totalRounds: payload.totalRounds ?? null,
-        currentDrawerPlayerId: payload.currentDrawerPlayerId ?? null,
+        currentDrawerPlayerId: drawerId,
         startedAt: payload.startedAt || new Date().toISOString(),
         completedAt: null,
         completionReason: null,
@@ -97,7 +137,7 @@ export function GameProvider({ children }) {
       appendLog(
         `start:${payload.startedAt || ''}`,
         'start',
-        `Game started · Round ${payload.currentRound ?? 1} of ${payload.totalRounds ?? '?'}`
+        `Game started · Round ${round} of ${payload.totalRounds ?? '?'}`
       );
     },
     [syncPlayers, appendLog]
@@ -109,26 +149,35 @@ export function GameProvider({ children }) {
       if (Array.isArray(payload.players)) {
         syncPlayers(payload.players);
       }
+      const round = payload.currentRound;
+      const turn = payload.currentTurn;
+      const drawerId = payload.currentDrawerPlayerId ?? null;
+      const nextKey = turnKeyOf(round, turn, drawerId);
+
+      if (nextKey && nextKey !== currentTurnKeyRef.current) {
+        currentTurnKeyRef.current = nextKey;
+        setWordState(INITIAL_WORD_STATE);
+      }
+
       setGameState((prev) => ({
         ...prev,
         status: 'started',
-        currentRound: payload.currentRound ?? prev.currentRound,
-        currentTurn: payload.currentTurn ?? prev.currentTurn,
+        currentRound: round ?? prev.currentRound,
+        currentTurn: turn ?? prev.currentTurn,
         totalRounds: payload.totalRounds ?? prev.totalRounds,
-        currentDrawerPlayerId: payload.currentDrawerPlayerId ?? null,
+        currentDrawerPlayerId: drawerId,
         lastTurnReason: payload.reason || null,
       }));
       setError(null);
 
       const drawerName =
-        (payload.players || players).find(
-          (p) => p.playerId === payload.currentDrawerPlayerId
-        )?.displayName || 'Next player';
+        (payload.players || players).find((p) => p.playerId === drawerId)?.displayName ||
+        'Next player';
 
       appendLog(
-        `turn:${payload.currentRound}:${payload.currentTurn}:${payload.currentDrawerPlayerId}`,
+        `turn:${round}:${turn}:${drawerId}`,
         'turn',
-        `Round ${payload.currentRound}, Turn ${payload.currentTurn}: ${drawerName} is drawing`
+        `Round ${round}, Turn ${turn}: ${drawerName} is drawing`
       );
     },
     [syncPlayers, players, appendLog]
@@ -141,6 +190,8 @@ export function GameProvider({ children }) {
       if (Array.isArray(nextState.players)) {
         syncPlayers(nextState.players);
       }
+      currentTurnKeyRef.current = null;
+      setWordState(INITIAL_WORD_STATE);
       setGameState((prev) => ({
         ...prev,
         status: 'completed',
@@ -161,7 +212,32 @@ export function GameProvider({ children }) {
     [syncPlayers, appendLog]
   );
 
-  // Subscribe to backend game initialization & turn Socket.IO broadcasts
+  const applyWordAssigned = useCallback(
+    (payload) => {
+      if (!payload?.word) return;
+      setWordState({
+        phase: 'selected',
+        options: [],
+        assignedWord: {
+          wordId: payload.wordId,
+          word: payload.word,
+          category: payload.category ?? null,
+          wordLength: payload.wordLength,
+          pattern: payload.pattern,
+        },
+        publicWord: {
+          drawerPlayerId: playerId,
+          wordLength: payload.wordLength,
+          pattern: payload.pattern,
+          safeHints: { category: payload.category ?? null },
+        },
+      });
+      setError(null);
+    },
+    [playerId]
+  );
+
+  // Subscribe to backend game & word management Socket.IO broadcasts
   useEffect(() => {
     const handleGameStart = (event) => {
       applyGameStart(event);
@@ -191,18 +267,78 @@ export function GameProvider({ children }) {
       applyGameComplete(event);
     };
 
+    // Sent privately to the active drawer's socket
+    const handleWordOptions = (event) => {
+      if (!event || !Array.isArray(event.options)) return;
+      const nextKey = turnKeyOf(
+        event.currentRound,
+        event.currentTurn,
+        playerId
+      );
+      if (nextKey) currentTurnKeyRef.current = nextKey;
+      setWordState({
+        phase: 'choosing',
+        options: event.options,
+        assignedWord: null,
+        publicWord: null,
+      });
+      setError(null);
+    };
+
+    // Sent privately to the active drawer's socket
+    const handleWordAssigned = (event) => {
+      applyWordAssigned(event);
+    };
+
+    // Broadcast to non-drawer players (never includes the actual word)
+    const handleWordSelected = (event) => {
+      if (!event) return;
+      setWordState({
+        phase: 'selected',
+        options: [],
+        assignedWord: null,
+        publicWord: {
+          drawerPlayerId: event.drawerPlayerId,
+          wordLength: event.wordLength,
+          pattern: event.pattern,
+          safeHints: event.safeHints || {},
+          wordMode: event.wordMode || null,
+        },
+      });
+      setError(null);
+      appendLog(
+        `word-selected:${currentTurnKeyRef.current || ''}:${event.pattern}`,
+        'word',
+        `Drawer selected a ${event.wordLength}-letter word`
+      );
+    };
+
     socket.on('game_start', handleGameStart);
     socket.on('round_started', handleRoundStarted);
     socket.on('game_turn', handleGameTurn);
     socket.on('game_complete', handleGameComplete);
+    socket.on('word_options', handleWordOptions);
+    socket.on('word_assigned', handleWordAssigned);
+    socket.on('word_selected', handleWordSelected);
 
     return () => {
       socket.off('game_start', handleGameStart);
       socket.off('round_started', handleRoundStarted);
       socket.off('game_turn', handleGameTurn);
       socket.off('game_complete', handleGameComplete);
+      socket.off('word_options', handleWordOptions);
+      socket.off('word_assigned', handleWordAssigned);
+      socket.off('word_selected', handleWordSelected);
     };
-  }, [socket, applyGameStart, applyGameTurn, applyGameComplete, appendLog]);
+  }, [
+    socket,
+    playerId,
+    applyGameStart,
+    applyGameTurn,
+    applyGameComplete,
+    applyWordAssigned,
+    appendLog,
+  ]);
 
   const startGame = useCallback(async () => {
     setIsStartingGame(true);
@@ -246,6 +382,28 @@ export function GameProvider({ children }) {
     }
   }, [applyGameTurn, applyGameComplete]);
 
+  const selectWord = useCallback(
+    async (wordId) => {
+      setIsSelectingWord(true);
+      setError(null);
+      try {
+        const result = await selectWordSocket(wordId);
+        applyWordAssigned(result);
+        return result;
+      } catch (err) {
+        const normalized = {
+          code: err?.code || 'WORD_SELECT_FAILED',
+          message: err?.message || 'Unable to select word',
+        };
+        setError(normalized);
+        throw normalized;
+      } finally {
+        setIsSelectingWord(false);
+      }
+    },
+    [applyWordAssigned]
+  );
+
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -265,6 +423,7 @@ export function GameProvider({ children }) {
   const value = useMemo(
     () => ({
       gameState,
+      wordState,
       status: gameState.status,
       currentRound: gameState.currentRound,
       currentTurn: gameState.currentTurn,
@@ -275,24 +434,29 @@ export function GameProvider({ children }) {
       isSocketConnected: isConnected,
       isStartingGame,
       isAdvancingTurn,
+      isSelectingWord,
       gameLog,
       error,
       startGame,
       advanceTurn,
+      selectWord,
       resetGameState,
       clearError,
     }),
     [
       gameState,
+      wordState,
       currentDrawer,
       isCurrentDrawer,
       isConnected,
       isStartingGame,
       isAdvancingTurn,
+      isSelectingWord,
       gameLog,
       error,
       startGame,
       advanceTurn,
+      selectWord,
       resetGameState,
       clearError,
     ]

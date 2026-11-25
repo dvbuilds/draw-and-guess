@@ -6,6 +6,7 @@ import { io as createClient } from 'socket.io-client';
 
 let Player;
 let Room;
+let Word;
 let initSocket;
 let server;
 let ioServer;
@@ -14,6 +15,8 @@ let originalPlayerFindById;
 let originalRoomFindOne;
 let originalRoomFindById;
 let originalRoomFindOneAndUpdate;
+let originalWordFind;
+let originalWordFindOne;
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 
@@ -21,6 +24,10 @@ const players = [
   { id: '111111111111111111111111', name: 'DrawerOne', token: 'token-1' },
   { id: '222222222222222222222222', name: 'DrawerTwo', token: 'token-2' },
   { id: '333333333333333333333333', name: 'Spectator', token: 'token-3' },
+];
+const words = [
+  { _id: '000000000000000000000001', text: 'Rainbow', category: 'Nature', isActive: true },
+  { _id: '000000000000000000000002', text: 'Umbrella', category: 'Objects', isActive: true },
 ];
 const playerRows = new Map();
 let room;
@@ -42,7 +49,11 @@ function resetRoom() {
     currentTurn: null,
     turnOrder: [],
     currentDrawerPlayerId: null,
-    settings: { maxPlayers: 8, rounds: 2 },
+    wordOptionIds: [],
+    currentWordId: null,
+    currentWordText: null,
+    currentWordCategory: null,
+    settings: { maxPlayers: 8, rounds: 2, wordChoices: 2, wordMode: 'Normal', hintsEnabled: true, hints: 2 },
     members: players.slice(0, 2).map((p, index) => ({
       playerId: p.id,
       displayName: p.name,
@@ -86,12 +97,15 @@ before(async () => {
   process.env.MONGO_URI ||= 'mongodb://127.0.0.1:27017/draw-and-guess-test';
   ({ Player } = await import('../../backend/src/models/Player.js'));
   ({ Room } = await import('../../backend/src/models/Room.js'));
+  ({ Word } = await import('../../backend/src/models/Word.js'));
   ({ initSocket } = await import('../../backend/src/sockets/index.js'));
 
   originalPlayerFindById = Player.findById;
   originalRoomFindOne = Room.findOne;
   originalRoomFindById = Room.findById;
   originalRoomFindOneAndUpdate = Room.findOneAndUpdate;
+  originalWordFind = Word.find;
+  originalWordFindOne = Word.findOne;
 
   for (const p of players) {
     playerRows.set(p.id, {
@@ -112,7 +126,13 @@ before(async () => {
   Room.findOne = ({ code }) => ({
     select: async () => (room.code === code ? room : null),
   });
-  Room.findById = async (id) => (String(id) === room.id ? room : null);
+  Room.findById = (id) => {
+    const res = String(id) === room.id ? room : null;
+    return {
+      select: async () => res,
+      then: (resolve, reject) => Promise.resolve(res).then(resolve, reject),
+    };
+  };
   Room.findOneAndUpdate = async (filter, update) => {
     const statusMatches =
       typeof filter.gameStatus === 'object'
@@ -132,6 +152,13 @@ before(async () => {
     Object.assign(room, update.$set);
     return room;
   };
+  Word.find = async (query) =>
+    words.filter((w) => {
+      if (query.category?.$in && !query.category.$in.includes(w.category)) return false;
+      if (query._id?.$in && !query._id.$in.some((id) => String(id) === w._id)) return false;
+      return w.isActive;
+    });
+  Word.findOne = async ({ _id }) => words.find((w) => w._id === String(_id)) ?? null;
 
   resetRoom();
   server = http.createServer();
@@ -147,6 +174,8 @@ after(async () => {
   Room.findOne = originalRoomFindOne;
   Room.findById = originalRoomFindById;
   Room.findOneAndUpdate = originalRoomFindOneAndUpdate;
+  Word.find = originalWordFind;
+  Word.findOne = originalWordFindOne;
 });
 
 test('synchronizes game start, drawer display, round/turn transitions, reconnect state, and completion across clients', async () => {

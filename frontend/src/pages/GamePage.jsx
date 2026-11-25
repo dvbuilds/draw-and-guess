@@ -4,6 +4,8 @@ import { GameCompleteBanner } from '../components/game/GameCompleteBanner.jsx';
 import { GamePlayerList } from '../components/game/GamePlayerList.jsx';
 import { GameStagePlaceholder } from '../components/game/GameStagePlaceholder.jsx';
 import { GameTurnHeader } from '../components/game/GameTurnHeader.jsx';
+import { WordBlanksDisplay } from '../components/game/WordBlanksDisplay.jsx';
+import { WordSelectionCard } from '../components/game/WordSelectionCard.jsx';
 import { LobbyConnectionBanner } from '../components/lobby/LobbyConnectionBanner.jsx';
 import { PlayerIdentityCard } from '../components/player/PlayerIdentityCard.jsx';
 import { Badge, Button, Card } from '../components/ui/index.js';
@@ -38,6 +40,7 @@ export function GamePage() {
 
   const {
     gameState,
+    wordState,
     status: gameStatus,
     currentRound,
     currentTurn,
@@ -46,9 +49,11 @@ export function GamePage() {
     currentDrawer,
     isCurrentDrawer,
     isAdvancingTurn,
+    isSelectingWord,
     gameLog,
     error: gameError,
     advanceTurn,
+    selectWord,
   } = useGame();
 
   const [leaving, setLeaving] = useState(false);
@@ -168,11 +173,30 @@ export function GamePage() {
             />
           )}
 
+          {gameStatus === 'started' && (
+            isCurrentDrawer ? (
+              <WordSelectionCard
+                options={wordState.options}
+                assignedWord={wordState.assignedWord}
+                isSelectingWord={isSelectingWord}
+                isSocketConnected={isSocketConnected}
+                onSelectWord={selectWord}
+                error={gameError}
+              />
+            ) : (
+              <WordBlanksDisplay
+                publicWord={wordState.publicWord}
+                drawerName={currentDrawer?.displayName || 'the drawer'}
+              />
+            )
+          )}
+
           <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
             <div className="lg:col-span-8">
               <GameStagePlaceholder
                 isCurrentDrawer={isCurrentDrawer}
                 currentDrawer={currentDrawer}
+                wordPhase={wordState.phase}
                 isHost={isHost}
                 hostPlayer={hostPlayer}
                 isSocketConnected={isSocketConnected}
