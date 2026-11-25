@@ -3,6 +3,7 @@ import { Player } from '../models/Player.js';
 import { Room } from '../models/Room.js';
 import { validateGuestIdentity } from './playerIdentity.service.js';
 import { handleUnavailablePlayer } from './gameInitialization.service.js';
+import { deliverWordStateToDrawer } from './wordSelection.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -85,7 +86,9 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
   if (!identity.valid) throw new ApiError(400, 'Player identity is invalid', 'INVALID_PLAYER_IDENTITY');
   const playerId = identity.player.playerId;
 
-  const room = await Room.findOne({ code: roomCode }).select('+privateInviteTokenHash');
+  const room = await Room.findOne({ code: roomCode }).select(
+    '+privateInviteTokenHash +wordOptionIds +currentWordId +currentWordText +currentWordCategory'
+  );
   if (!room) throw new ApiError(404, 'Room code was not found', 'ROOM_NOT_FOUND');
   if (!room.isPublic && !tokenMatches(room.privateInviteTokenHash, payload.inviteToken)) {
     throw new ApiError(403, 'A valid invite token is required for this private room', 'PRIVATE_ROOM');
@@ -105,6 +108,9 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
   }
   if (socket.data.lobby?.roomId === String(room._id)
       && socket.data.lobby.playerId === playerId) {
+    if (room.gameStatus === 'started' && playerId === playerIdOf(room.currentDrawerPlayerId)) {
+      await deliverWordStateToDrawer({ io, room, socket });
+    }
     return { roomCode, players: roster(room), reconnected: false, alreadyConnected: true };
   }
 
@@ -127,6 +133,10 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
   if (previousSocketId && previousSocketId !== socket.id) {
     const previousSocket = io.sockets.sockets.get(previousSocketId);
     if (previousSocket) previousSocket.disconnect(true);
+  }
+
+  if (room.gameStatus === 'started' && playerId === playerIdOf(room.currentDrawerPlayerId)) {
+    await deliverWordStateToDrawer({ io, room, socket });
   }
 
   const event = {

@@ -5,6 +5,7 @@ import http from 'node:http';
 import { io as createClient } from 'socket.io-client';
 import { Player } from '../src/models/Player.js';
 import { Room } from '../src/models/Room.js';
+import { Word } from '../src/models/Word.js';
 import { initSocket } from '../src/sockets/index.js';
 
 const playerRows = new Map();
@@ -12,11 +13,19 @@ const originalPlayerFindById = Player.findById;
 const originalRoomFindOne = Room.findOne;
 const originalRoomFindById = Room.findById;
 const originalRoomFindOneAndUpdate = Room.findOneAndUpdate;
+const originalWordFind = Word.find;
+const originalWordFindOne = Word.findOne;
 const players = [
   { id: '111111111111111111111111', name: 'Host', token: 'host-token' },
   { id: '222222222222222222222222', name: 'Guest', token: 'guest-token' },
   { id: '333333333333333333333333', name: 'Reconnect', token: 'reconnect-token' },
   { id: '444444444444444444444444', name: 'Other', token: 'other-token' },
+];
+const words = [
+  { _id: '000000000000000000000001', text: 'Silver elephant', category: 'Animals', isActive: true },
+  { _id: '000000000000000000000002', text: 'Green turtle', category: 'Animals', isActive: true },
+  { _id: '000000000000000000000003', text: 'Blue umbrella', category: 'Objects', isActive: true },
+  { _id: '000000000000000000000004', text: 'Fire truck', category: 'Combination', isActive: true },
 ];
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 let server;
@@ -35,7 +44,7 @@ function resetRoom() {
     hostPlayerId: players[0].id,
     gameStatus: 'lobby',
     gameStartedAt: null,
-    settings: { maxPlayers: 8, rounds: 2 },
+    settings: { maxPlayers: 8, rounds: 2, wordChoices: 2, wordMode: 'Normal', hintsEnabled: true, hints: 2 },
     members: players.map((player, index) => ({
       playerId: player.id,
       displayName: player.name,
@@ -95,7 +104,13 @@ before(async () => {
   Room.findOne = ({ code }) => ({
     select: async () => (room.code === code ? room : null),
   });
-  Room.findById = async (id) => String(id) === room.id ? room : null;
+  Room.findById = (id) => {
+    const result = String(id) === room.id ? room : null;
+    return {
+      select: async () => result,
+      then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
+    };
+  };
   Room.findOneAndUpdate = async (filter, update) => {
     const statusMatches = typeof filter.gameStatus === 'object'
       ? filter.gameStatus.$in.includes(room.gameStatus ?? null)
@@ -106,10 +121,19 @@ before(async () => {
     if (filter.currentTurn !== undefined && room.currentTurn !== filter.currentTurn) return null;
     if (filter.currentDrawerPlayerId !== undefined
         && String(room.currentDrawerPlayerId) !== String(filter.currentDrawerPlayerId)) return null;
+    if (filter.currentWordId === null && room.currentWordId != null) return null;
+    if (filter.wordOptionIds
+        && !room.wordOptionIds.some((id) => String(id) === String(filter.wordOptionIds))) return null;
     if (filter.$expr && room.members.filter((member) => member.isConnected).length < 2) return null;
     Object.assign(room, update.$set);
     return room;
   };
+  Word.find = async (query) => words.filter((word) => {
+    if (query.category?.$in && !query.category.$in.includes(word.category)) return false;
+    if (query._id?.$in && !query._id.$in.some((id) => String(id) === word._id)) return false;
+    return word.isActive;
+  });
+  Word.findOne = async ({ _id }) => words.find((word) => word._id === String(_id)) ?? null;
   resetRoom();
   server = http.createServer();
   ioServer = initSocket(server);
@@ -124,6 +148,8 @@ after(async () => {
   Room.findOne = originalRoomFindOne;
   Room.findById = originalRoomFindById;
   Room.findOneAndUpdate = originalRoomFindOneAndUpdate;
+  Word.find = originalWordFind;
+  Word.findOne = originalWordFindOne;
 });
 
 test('synchronizes multiple socket members, leaves, reconnects, transfers host, and validates game start', async () => {
@@ -192,6 +218,9 @@ test('synchronizes multiple socket members, leaves, reconnects, transfers host, 
   assert.equal(room.members.find((member) => member.playerId === players[2].id).role, 'host');
 
   const startedEvent = waitForEvent(other, 'game_start');
+  const optionsEvent = waitForEvent(reconnected, 'word_options');
+  let otherReceivedOptions = false;
+  other.on('word_options', () => { otherReceivedOptions = true; });
   const started = await request(reconnected, 'game:start');
   assert.equal(started.success, true);
   const initialGame = await startedEvent;
@@ -201,7 +230,27 @@ test('synchronizes multiple socket members, leaves, reconnects, transfers host, 
   assert.equal(initialGame.totalRounds, 2);
   assert.equal(initialGame.currentDrawerPlayerId, players[2].id);
   assert.deepEqual(room.turnOrder.map(String), [players[2].id, players[3].id]);
+  const options = await optionsEvent;
+  assert.equal(options.options.length, 2);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(otherReceivedOptions, false);
   assert.equal(room.gameStatus, 'started');
+
+  const unauthorizedSelection = await request(other, 'word:select', { wordId: options.options[0].wordId });
+  assert.equal(unauthorizedSelection.error.code, 'DRAWER_ONLY');
+  const invalidSelection = await request(reconnected, 'word:select', { wordId: 'ffffffffffffffffffffffff' });
+  assert.equal(invalidSelection.error.code, 'INVALID_WORD_SELECTION');
+  const selectedBroadcast = waitForEvent(other, 'word_selected');
+  const selectedPrivate = waitForEvent(reconnected, 'word_assigned');
+  const selected = await request(reconnected, 'word:select', { wordId: options.options[0].wordId });
+  assert.equal(selected.success, true);
+  assert.equal(selected.data.word, options.options[0].word);
+  const publicWord = await selectedBroadcast;
+  assert.equal(publicWord.word, undefined);
+  assert.equal(publicWord.pattern.includes(options.options[0].word), false);
+  assert.equal(publicWord.safeHints.category, options.options[0].category);
+  assert.equal((await selectedPrivate).word, options.options[0].word);
+  assert.equal(room.currentWordText, options.options[0].word);
 
   const duplicateStart = await request(reconnected, 'game:start');
   assert.equal(duplicateStart.error.code, 'GAME_ALREADY_STARTED');

@@ -37,6 +37,10 @@ const roomSchema = new mongoose.Schema(
     currentTurn: { type: Number, default: null },
     turnOrder: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
     currentDrawerPlayerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Player', default: null },
+    wordOptionIds: { type: [mongoose.Schema.Types.ObjectId], ref: 'Word', default: [], select: false },
+    currentWordId: { type: mongoose.Schema.Types.ObjectId, ref: 'Word', default: null, select: false },
+    currentWordText: { type: String, default: null, select: false },
+    currentWordCategory: { type: String, default: null, select: false },
     privateInviteTokenHash: { type: String, select: false },
   },
   { timestamps: true, versionKey: false }

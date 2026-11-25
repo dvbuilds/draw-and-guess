@@ -1,4 +1,5 @@
 import { Room } from '../models/Room.js';
+import { emitWordOptions, prepareWordOptions } from './wordSelection.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const MIN_PLAYERS_TO_START = 2;
@@ -106,6 +107,7 @@ async function advanceTurn({ io, room, reason }) {
   if (!next || next.complete) {
     return completeGame({ io, room, reason: next?.noConnectedPlayers ? 'no_connected_players' : 'rounds_complete' });
   }
+  const preparedWords = await prepareWordOptions(room.settings);
 
   const updated = await Room.findOneAndUpdate(
     stateFilter(room),
@@ -114,6 +116,10 @@ async function advanceTurn({ io, room, reason }) {
         currentRound: next.round,
         currentTurn: next.turn,
         currentDrawerPlayerId: next.playerId,
+        wordOptionIds: preparedWords.wordIds,
+        currentWordId: null,
+        currentWordText: null,
+        currentWordCategory: null,
       },
     },
     { new: true }
@@ -138,6 +144,7 @@ async function advanceTurn({ io, room, reason }) {
     });
   }
   io.to(updated.code).emit('game_turn', event);
+  emitWordOptions(io, updated, preparedWords.options);
   return event;
 }
 
@@ -155,6 +162,7 @@ export async function initializeGame({ socket, io }) {
     throw new ApiError(409, `At least ${MIN_PLAYERS_TO_START} connected players are required to start`, 'NOT_ENOUGH_PLAYERS');
   }
 
+  const preparedWords = await prepareWordOptions(room.settings);
   const turnOrder = connectedMembers.map((member) => member.playerId);
   const startedAt = new Date();
   const started = await Room.findOneAndUpdate(
@@ -194,6 +202,10 @@ export async function initializeGame({ socket, io }) {
         currentTurn: 1,
         turnOrder,
         currentDrawerPlayerId: turnOrder[0],
+        wordOptionIds: preparedWords.wordIds,
+        currentWordId: null,
+        currentWordText: null,
+        currentWordCategory: null,
       },
     },
     { new: true }
@@ -216,6 +228,7 @@ export async function initializeGame({ socket, io }) {
     ...gameState(started),
   };
   io.to(started.code).emit('game_start', event);
+  emitWordOptions(io, started, preparedWords.options);
   return event;
 }
 

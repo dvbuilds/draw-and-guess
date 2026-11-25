@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import { env } from '../config/env.js';
 import { joinLobby, leaveLobby } from '../services/lobby.service.js';
 import { advanceGameTurn, initializeGame } from '../services/gameInitialization.service.js';
+import { selectWord } from '../services/wordSelection.service.js';
 
 function socketError(err) {
   return {
@@ -51,6 +52,7 @@ export function initSocket(httpServer) {
     }));
     registerRequest(socket, 'game:start', () => initializeGame({ socket, io }));
     registerRequest(socket, 'game:next_turn', () => advanceGameTurn({ socket, io }));
+    registerRequest(socket, 'word:select', (payload) => selectWord({ socket, io, payload }));
 
     socket.on('disconnect', (reason) => {
       leaveLobby({ io, socket, reason, unexpected: true })
