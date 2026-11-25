@@ -1,5 +1,6 @@
 import { Room } from '../models/Room.js';
 import { emitWordOptions, prepareWordOptions } from './wordSelection.service.js';
+import { resetRoomDrawing } from './drawing.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const MIN_PLAYERS_TO_START = 2;
@@ -94,6 +95,7 @@ async function completeGame({ io, room, reason }) {
     completedAt: completed.gameCompletedAt.toISOString(),
     gameState: gameState(completed),
   };
+  resetRoomDrawing(completed.code);
   io.to(completed.code).emit('game_complete', event);
   return event;
 }
@@ -135,6 +137,7 @@ async function advanceTurn({ io, room, reason }) {
     currentDrawerPlayerId: idOf(updated.currentDrawerPlayerId),
     players: players(updated),
   };
+  resetRoomDrawing(updated.code);
   if (next.roundChanged) {
     io.to(updated.code).emit('round_started', {
       roomCode: updated.code,
@@ -227,6 +230,7 @@ export async function initializeGame({ socket, io }) {
     startedAt: started.gameStartedAt.toISOString(),
     ...gameState(started),
   };
+  resetRoomDrawing(started.code);
   io.to(started.code).emit('game_start', event);
   emitWordOptions(io, started, preparedWords.options);
   return event;

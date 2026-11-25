@@ -84,3 +84,19 @@ export function nextTurnSocket() {
 export function selectWordSocket(wordId) {
   return emitWithAck('word:select', { wordId });
 }
+
+export function sendDrawingStroke(payload) {
+  return emitWithAck('drawing:stroke', payload);
+}
+
+export function undoDrawingSocket() {
+  return emitWithAck('drawing:undo', {});
+}
+
+export function clearDrawingSocket() {
+  return emitWithAck('drawing:clear', {});
+}
+
+export function syncDrawingSocket() {
+  return emitWithAck('drawing:sync', {});
+}

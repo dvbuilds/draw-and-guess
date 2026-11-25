@@ -194,7 +194,13 @@ export function GamePage() {
           <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
             <div className="lg:col-span-8">
               <GameStagePlaceholder
+                roomCode={roomCode}
+                lobbyStatus={lobbyStatus}
                 isCurrentDrawer={isCurrentDrawer}
+                currentRound={currentRound}
+                currentTurn={currentTurn}
+                currentDrawerPlayerId={currentDrawerPlayerId}
+                canDraw={isCurrentDrawer && wordState.phase === 'selected' && gameStatus === 'started'}
                 currentDrawer={currentDrawer}
                 wordPhase={wordState.phase}
                 isHost={isHost}
