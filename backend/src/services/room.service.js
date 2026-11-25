@@ -146,6 +146,9 @@ export async function joinRoom(input = {}) {
   if (!room.isPublic && !tokenMatches(room.privateInviteTokenHash, inviteToken)) {
     throw new ApiError(403, 'A valid invite token is required for this private room', 'PRIVATE_ROOM');
   }
+  if (room.gameStatus && room.gameStatus !== 'lobby') {
+    throw new ApiError(409, 'Players cannot join after the game has started', 'GAME_ALREADY_STARTED');
+  }
 
   const playerId = String(player._id);
   const existing = room.members.find((member) => String(member.playerId) === playerId);

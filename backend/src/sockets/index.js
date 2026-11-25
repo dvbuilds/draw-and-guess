@@ -1,6 +1,7 @@
 import { Server } from 'socket.io';
 import { env } from '../config/env.js';
-import { joinLobby, leaveLobby, startLobbyGame } from '../services/lobby.service.js';
+import { joinLobby, leaveLobby } from '../services/lobby.service.js';
+import { advanceGameTurn, initializeGame } from '../services/gameInitialization.service.js';
 
 function socketError(err) {
   return {
@@ -48,7 +49,8 @@ export function initSocket(httpServer) {
       socket,
       reason: typeof payload.reason === 'string' ? payload.reason.slice(0, 64) : 'left',
     }));
-    registerRequest(socket, 'game:start', () => startLobbyGame({ socket, io }));
+    registerRequest(socket, 'game:start', () => initializeGame({ socket, io }));
+    registerRequest(socket, 'game:next_turn', () => advanceGameTurn({ socket, io }));
 
     socket.on('disconnect', (reason) => {
       leaveLobby({ io, socket, reason, unexpected: true })

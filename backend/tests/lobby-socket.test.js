@@ -35,7 +35,7 @@ function resetRoom() {
     hostPlayerId: players[0].id,
     gameStatus: 'lobby',
     gameStartedAt: null,
-    settings: { maxPlayers: 8 },
+    settings: { maxPlayers: 8, rounds: 2 },
     members: players.map((player, index) => ({
       playerId: player.id,
       displayName: player.name,
@@ -97,10 +97,16 @@ before(async () => {
   });
   Room.findById = async (id) => String(id) === room.id ? room : null;
   Room.findOneAndUpdate = async (filter, update) => {
-    if (!filter.gameStatus.$in.includes(room.gameStatus ?? null)
-        || String(room.hostPlayerId) !== String(filter.hostPlayerId)) return null;
-    const connectedCount = room.members.filter((member) => member.isConnected).length;
-    if (connectedCount < 2) return null;
+    const statusMatches = typeof filter.gameStatus === 'object'
+      ? filter.gameStatus.$in.includes(room.gameStatus ?? null)
+      : room.gameStatus === filter.gameStatus;
+    if (!statusMatches) return null;
+    if (filter.hostPlayerId && String(room.hostPlayerId) !== String(filter.hostPlayerId)) return null;
+    if (filter.currentRound !== undefined && room.currentRound !== filter.currentRound) return null;
+    if (filter.currentTurn !== undefined && room.currentTurn !== filter.currentTurn) return null;
+    if (filter.currentDrawerPlayerId !== undefined
+        && String(room.currentDrawerPlayerId) !== String(filter.currentDrawerPlayerId)) return null;
+    if (filter.$expr && room.members.filter((member) => member.isConnected).length < 2) return null;
     Object.assign(room, update.$set);
     return room;
   };
@@ -188,8 +194,36 @@ test('synchronizes multiple socket members, leaves, reconnects, transfers host, 
   const startedEvent = waitForEvent(other, 'game_start');
   const started = await request(reconnected, 'game:start');
   assert.equal(started.success, true);
-  assert.equal((await startedEvent).roomCode, room.code);
+  const initialGame = await startedEvent;
+  assert.equal(initialGame.roomCode, room.code);
+  assert.equal(initialGame.currentRound, 1);
+  assert.equal(initialGame.currentTurn, 1);
+  assert.equal(initialGame.totalRounds, 2);
+  assert.equal(initialGame.currentDrawerPlayerId, players[2].id);
+  assert.deepEqual(room.turnOrder.map(String), [players[2].id, players[3].id]);
   assert.equal(room.gameStatus, 'started');
-  const startedAgain = await request(reconnected, 'game:start');
-  assert.equal(startedAgain.error.code, 'GAME_ALREADY_STARTED');
+
+  const duplicateStart = await request(reconnected, 'game:start');
+  assert.equal(duplicateStart.error.code, 'GAME_ALREADY_STARTED');
+  const nextTurnEvent = waitForEvent(other, 'game_turn');
+  const nextTurn = await request(reconnected, 'game:next_turn');
+  assert.equal(nextTurn.success, true);
+  assert.equal((await nextTurnEvent).currentDrawerPlayerId, players[3].id);
+  assert.equal(room.currentTurn, 2);
+
+  const disconnectedTurnEvent = waitForEvent(reconnected, 'game_turn');
+  const roundEvent = waitForEvent(reconnected, 'round_started');
+  other.disconnect();
+  const skippedDrawer = await disconnectedTurnEvent;
+  assert.equal(skippedDrawer.reason, 'drawer_disconnected');
+  assert.equal(skippedDrawer.currentRound, 2);
+  assert.equal(skippedDrawer.currentDrawerPlayerId, players[2].id);
+  assert.equal((await roundEvent).currentRound, 2);
+
+  const completedEvent = waitForEvent(reconnected, 'game_complete');
+  const completed = await request(reconnected, 'game:next_turn');
+  assert.equal(completed.success, true);
+  assert.equal(completed.data.reason, 'rounds_complete');
+  assert.equal((await completedEvent).gameState.status, 'completed');
+  assert.equal(room.gameStatus, 'completed');
 });

@@ -2,9 +2,9 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { Player } from '../models/Player.js';
 import { Room } from '../models/Room.js';
 import { validateGuestIdentity } from './playerIdentity.service.js';
+import { handleUnavailablePlayer } from './gameInitialization.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
-const MIN_PLAYERS_TO_START = 2;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const membershipLocks = new Map();
 
@@ -96,6 +96,10 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
   if (!player || !member) {
     throw new ApiError(403, 'Player must join this room before connecting to its lobby', 'ROOM_MEMBERSHIP_REQUIRED');
   }
+  if (room.gameStatus === 'started'
+      && !(room.turnOrder ?? []).some((id) => playerIdOf(id) === playerId)) {
+    throw new ApiError(409, 'This player was not active when the game started', 'PLAYER_NOT_IN_GAME');
+  }
   if (socket.data.lobby && socket.data.lobby.roomId !== String(room._id)) {
     throw new ApiError(409, 'This socket is already connected to another room', 'ALREADY_IN_LOBBY');
   }
@@ -136,7 +140,21 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
     players: roster(room),
   };
   io.to(roomCode).emit('player_joined', event);
-  return { roomCode, players: event.players, reconnected, alreadyConnected: false };
+  return {
+    roomCode,
+    players: event.players,
+    reconnected,
+    alreadyConnected: false,
+    gameState: room.gameStatus === 'started' || room.gameStatus === 'completed'
+      ? {
+        status: room.gameStatus,
+        currentRound: room.currentRound,
+        currentTurn: room.currentTurn,
+        totalRounds: room.totalRounds,
+        currentDrawerPlayerId: room.currentDrawerPlayerId ? playerIdOf(room.currentDrawerPlayerId) : null,
+      }
+      : null,
+  };
 }
 
 export async function leaveLobby({ io, socket, reason = 'left', unexpected = false }) {
@@ -179,69 +197,13 @@ export async function leaveLobby({ io, socket, reason = 'left', unexpected = fal
   };
   io.to(session.roomCode).emit('player_left', event);
   if (!unexpected) await socket.leave(session.roomCode);
+  if (room.gameStatus === 'started') {
+    await handleUnavailablePlayer({
+      io,
+      roomId: room._id,
+      playerId: session.playerId,
+      reason: unexpected ? 'drawer_disconnected' : 'drawer_left',
+    });
+  }
   return { left: true, hostTransferredTo, players: event.players };
-}
-
-export async function startLobbyGame({ socket, io }) {
-  const session = socket.data.lobby;
-  if (!session) throw new ApiError(403, 'Join a room before starting the game', 'NOT_IN_ROOM');
-  const room = await Room.findById(session.roomId);
-  if (!room) throw new ApiError(404, 'Room was not found', 'ROOM_NOT_FOUND');
-  if (playerIdOf(room.hostPlayerId) !== session.playerId) {
-    throw new ApiError(403, 'Only the current host can start the game', 'HOST_ONLY');
-  }
-  const member = findMember(room, session.playerId);
-  if (!member || member.socketId !== socket.id || !member.isConnected) {
-    throw new ApiError(403, 'The current socket is not the active host connection', 'HOST_ONLY');
-  }
-  if (room.gameStatus && room.gameStatus !== 'lobby') {
-    throw new ApiError(409, 'The game has already started', 'GAME_ALREADY_STARTED');
-  }
-  const activePlayers = room.members.filter((item) => item.isConnected).length;
-  if (activePlayers < MIN_PLAYERS_TO_START) {
-    throw new ApiError(409, `At least ${MIN_PLAYERS_TO_START} connected players are required to start`, 'NOT_ENOUGH_PLAYERS');
-  }
-
-  const startedAt = new Date();
-  const startedRoom = await Room.findOneAndUpdate(
-    {
-      _id: room._id,
-      hostPlayerId: room.hostPlayerId,
-      gameStatus: { $in: ['lobby', null] },
-      $expr: {
-        $gte: [
-          {
-            $size: {
-              $filter: {
-                input: '$members',
-                as: 'member',
-                cond: { $eq: ['$$member.isConnected', true] },
-              },
-            },
-          },
-          MIN_PLAYERS_TO_START,
-        ],
-      },
-    },
-    { $set: { gameStatus: 'started', gameStartedAt: startedAt } },
-    { new: true }
-  );
-  if (!startedRoom) {
-    const current = await Room.findById(session.roomId);
-    if (current?.gameStatus && current.gameStatus !== 'lobby') {
-      throw new ApiError(409, 'The game has already started', 'GAME_ALREADY_STARTED');
-    }
-    if (playerIdOf(current?.hostPlayerId) !== session.playerId) {
-      throw new ApiError(403, 'Only the current host can start the game', 'HOST_ONLY');
-    }
-    throw new ApiError(409, `At least ${MIN_PLAYERS_TO_START} connected players are required to start`, 'NOT_ENOUGH_PLAYERS');
-  }
-  const event = {
-    roomCode: session.roomCode,
-    hostPlayerId: session.playerId,
-    startedAt: startedRoom.gameStartedAt.toISOString(),
-    players: roster(startedRoom),
-  };
-  io.to(session.roomCode).emit('game_start', event);
-  return event;
 }
