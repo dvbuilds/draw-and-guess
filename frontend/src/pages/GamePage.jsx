@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ChatPanel } from '../components/game/ChatPanel.jsx';
 import { GameCompleteBanner } from '../components/game/GameCompleteBanner.jsx';
 import { GameStagePlaceholder } from '../components/game/GameStagePlaceholder.jsx';
 import { GameTurnHeader } from '../components/game/GameTurnHeader.jsx';
@@ -14,6 +15,7 @@ import { Badge, Button, Card } from '../components/ui/index.js';
 import { useGame } from '../hooks/useGame.js';
 import { useLobby } from '../hooks/useLobby.js';
 import { usePlayer } from '../hooks/usePlayer.js';
+import { useRoom } from '../hooks/useRoom.js';
 
 export function GamePage() {
   const { roomCode: paramCode } = useParams();
@@ -22,6 +24,7 @@ export function GamePage() {
 
   const inviteTokenParam = (searchParams.get('inviteToken') || '').trim();
   const { playerId, hasIdentity, isRestoring } = usePlayer();
+  const { chatMessages, isSendingChat, chatError, sendChatMessage, clearChatError } = useRoom();
 
   const {
     room,
@@ -43,6 +46,7 @@ export function GamePage() {
   const {
     gameState,
     wordState,
+    timerState,
     strokes,
     isSyncingDrawing,
     leaderboard,
@@ -183,6 +187,8 @@ export function GamePage() {
             currentDrawer={currentDrawer}
             isCurrentDrawer={isCurrentDrawer}
             lastTurnReason={gameState.lastTurnReason}
+            timerState={timerState}
+            wordPhase={wordState.phase}
           />
 
           {lastRoundResult && (
@@ -207,6 +213,7 @@ export function GamePage() {
               <WordSelectionCard
                 options={wordState.options}
                 assignedWord={wordState.assignedWord}
+                hintProgress={wordState.hintProgress}
                 isSelectingWord={isSelectingWord}
                 isSocketConnected={isSocketConnected}
                 onSelectWord={selectWord}
@@ -215,6 +222,7 @@ export function GamePage() {
             ) : (
               <WordBlanksDisplay
                 publicWord={wordState.publicWord}
+                hintProgress={wordState.hintProgress}
                 drawerName={currentDrawer?.displayName || 'the drawer'}
               />
             )
@@ -263,6 +271,17 @@ export function GamePage() {
                 players={players}
                 currentPlayerId={playerId}
                 currentDrawerPlayerId={currentDrawerPlayerId}
+              />
+
+              <ChatPanel
+                title="Room Chat"
+                messages={chatMessages}
+                currentPlayerId={playerId}
+                isConnected={isSocketConnected && lobbyStatus === 'joined'}
+                isSending={isSendingChat}
+                error={chatError}
+                onSendMessage={sendChatMessage}
+                onClearError={clearChatError}
               />
             </div>
           </div>

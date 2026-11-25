@@ -147,6 +147,10 @@ function tokenMatches(expectedHash, suppliedToken) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+export function validateRoomInvitation(room, inviteToken) {
+  return Boolean(room?.isPublic) || tokenMatches(room?.privateInviteTokenHash, inviteToken);
+}
+
 export async function joinRoom(input = {}) {
   const { roomCode: inputCode, inviteToken } = input;
   if (typeof inputCode !== 'string' || !/^[A-Za-z0-9]{8}$/.test(inputCode.trim())) {
@@ -156,7 +160,7 @@ export async function joinRoom(input = {}) {
   const player = await requirePlayerIdentity(input);
   const room = await Room.findOne({ code }).select('+privateInviteTokenHash');
   if (!room) throw new ApiError(404, 'Room code was not found', 'ROOM_NOT_FOUND');
-  if (!room.isPublic && !tokenMatches(room.privateInviteTokenHash, inviteToken)) {
+  if (!validateRoomInvitation(room, inviteToken)) {
     throw new ApiError(403, 'A valid invite token is required for this private room', 'PRIVATE_ROOM');
   }
   if (room.gameStatus && room.gameStatus !== 'lobby') {

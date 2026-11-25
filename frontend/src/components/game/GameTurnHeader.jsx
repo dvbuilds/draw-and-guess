@@ -1,8 +1,11 @@
 import { Badge, Card } from '../ui/index.js';
+import { CountdownTimer } from './CountdownTimer.jsx';
 
 const REASON_LABELS = {
   game_started: 'Match initialized',
   host_advanced: 'Host advanced turn',
+  all_guessed: 'All players guessed the word',
+  timer_expired: 'Turn timer expired',
   drawer_disconnected: 'Previous drawer disconnected — turn advanced',
   drawer_left: 'Previous drawer left — turn advanced',
 };
@@ -16,6 +19,8 @@ export function GameTurnHeader({
   currentDrawer,
   isCurrentDrawer,
   lastTurnReason,
+  timerState,
+  wordPhase,
 }) {
   return (
     <Card variant="elevated" className="space-y-4">
@@ -27,7 +32,10 @@ export function GameTurnHeader({
           </Badge>
         </div>
 
-        <div className="flex items-center gap-3 text-sm font-black text-slate-900">
+        <div className="flex flex-wrap items-center gap-3 text-sm font-black text-slate-900">
+          {status === 'started' && (
+            <CountdownTimer timerState={timerState} wordPhase={wordPhase} />
+          )}
           <span className="rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-1">
             Round {currentRound ?? '—'} / {totalRounds ?? '—'}
           </span>

@@ -3,6 +3,7 @@ import { Badge, Button, Card } from '../ui/index.js';
 export function WordSelectionCard({
   options = [],
   assignedWord = null,
+  hintProgress = null,
   isSelectingWord = false,
   isSocketConnected = true,
   onSelectWord,
@@ -25,12 +26,17 @@ export function WordSelectionCard({
               <Badge variant="indigo">{assignedWord.category}</Badge>
             )}
             <Badge variant="emerald">{assignedWord.wordLength} letters</Badge>
+            {hintProgress && (
+              <Badge variant="amber">
+                Hint {hintProgress.hintNumber}/{hintProgress.hintCount}
+              </Badge>
+            )}
           </div>
         </div>
         <p className="text-xs text-indigo-900">
-          Other players only see the blanks:{' '}
+          Guessers currently see:{' '}
           <span className="font-mono font-bold tracking-widest">
-            {assignedWord.pattern}
+            {hintProgress?.pattern || assignedWord.pattern}
           </span>
         </p>
       </Card>

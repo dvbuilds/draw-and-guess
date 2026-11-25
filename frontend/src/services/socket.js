@@ -89,6 +89,10 @@ export function submitGuessSocket(guess) {
   return emitWithAck('guess:submit', { guess });
 }
 
+export function sendChatMessageSocket(message) {
+  return emitWithAck('chat:send', { message });
+}
+
 export function sendDrawingStrokeSocket(segment) {
   return emitWithAck('drawing:stroke', segment);
 }

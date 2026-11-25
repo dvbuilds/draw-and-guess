@@ -2,6 +2,7 @@ import { Room } from '../models/Room.js';
 import { emitWordOptions, prepareWordOptions } from './wordSelection.service.js';
 import { resetRoomDrawing } from './drawing.service.js';
 import { buildLeaderboard, determineWinners, completeRound, removeEligibleGuesser } from './scoring.service.js';
+import { stopTurnTimer } from './timer.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const MIN_PLAYERS_TO_START = 2;
@@ -84,6 +85,7 @@ function nextConnectedTurn(room) {
 }
 
 async function completeGame({ io, room, reason }) {
+  stopTurnTimer(room._id);
   const completedAt = new Date();
   const leaderboard = buildLeaderboard(room);
   const winners = determineWinners(leaderboard);
@@ -117,6 +119,7 @@ async function completeGame({ io, room, reason }) {
 }
 
 async function advanceTurn({ io, room, reason }) {
+  stopTurnTimer(room._id);
   if (countConnected(room) === 0) {
     return completeGame({ io, room, reason: 'no_connected_players' });
   }
@@ -143,6 +146,9 @@ async function advanceTurn({ io, room, reason }) {
         roundCompletionReason: null,
         eligibleGuesserIds: [],
         correctGuesserIds: [],
+        turnEndsAt: null,
+        hintLevel: 0,
+        revealedLetterPositions: [],
       },
     },
     { new: true }
@@ -235,6 +241,9 @@ export async function initializeGame({ socket, io }) {
         roundCompletionReason: null,
         eligibleGuesserIds: [],
         correctGuesserIds: [],
+        turnEndsAt: null,
+        hintLevel: 0,
+        revealedLetterPositions: [],
         finalLeaderboard: [],
         winnerPlayerIds: [],
         'members.$[].score': 0,

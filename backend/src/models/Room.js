@@ -45,6 +45,9 @@ const roomSchema = new mongoose.Schema(
     roundStatus: { type: String, enum: ['waiting_for_word', 'guessing', 'completed'], default: null },
     roundCompletedAt: { type: Date, default: null },
     roundCompletionReason: { type: String, default: null },
+    turnEndsAt: { type: Date, default: null },
+    hintLevel: { type: Number, min: 0, max: 5, default: 0 },
+    revealedLetterPositions: { type: [Number], default: [], select: false },
     eligibleGuesserIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
     correctGuesserIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
     finalLeaderboard: [{

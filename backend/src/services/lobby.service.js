@@ -1,12 +1,11 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { Player } from '../models/Player.js';
 import { Room } from '../models/Room.js';
+import { validateRoomInvitation } from './room.service.js';
 import { validateGuestIdentity } from './playerIdentity.service.js';
 import { handleUnavailablePlayer } from './gameInitialization.service.js';
 import { deliverWordStateToDrawer } from './wordSelection.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
-const hash = (value) => createHash('sha256').update(value).digest('hex');
 const membershipLocks = new Map();
 
 async function withMembershipLock(key, action) {
@@ -21,13 +20,6 @@ async function withMembershipLock(key, action) {
     release();
     if (membershipLocks.get(key) === current) membershipLocks.delete(key);
   }
-}
-
-function tokenMatches(expectedHash, suppliedToken) {
-  if (!expectedHash || typeof suppliedToken !== 'string' || !suppliedToken) return false;
-  const expected = Buffer.from(expectedHash, 'hex');
-  const actual = Buffer.from(hash(suppliedToken), 'hex');
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
 function playerIdOf(value) {
@@ -90,7 +82,7 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
     '+privateInviteTokenHash +wordOptionIds +currentWordId +currentWordText +currentWordCategory'
   );
   if (!room) throw new ApiError(404, 'Room code was not found', 'ROOM_NOT_FOUND');
-  if (!room.isPublic && !tokenMatches(room.privateInviteTokenHash, payload.inviteToken)) {
+  if (!validateRoomInvitation(room, payload.inviteToken)) {
     throw new ApiError(403, 'A valid invite token is required for this private room', 'PRIVATE_ROOM');
   }
 

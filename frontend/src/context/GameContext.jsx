@@ -37,6 +37,13 @@ const INITIAL_WORD_STATE = {
   options: [], // drawer-only word choices
   assignedWord: null, // drawer-only { wordId, word, category, wordLength, pattern }
   publicWord: null, // non-drawer { drawerPlayerId, wordLength, pattern, safeHints, wordMode }
+  hintProgress: null, // { hintNumber, hintCount, pattern }
+};
+
+const INITIAL_TIMER_STATE = {
+  durationSeconds: null,
+  turnEndsAt: null,
+  expired: false,
 };
 
 function createLogEntry(type, message) {
@@ -83,6 +90,7 @@ export function GameProvider({ children }) {
 
   const [gameState, setGameState] = useState(INITIAL_GAME_STATE);
   const [wordState, setWordState] = useState(INITIAL_WORD_STATE);
+  const [timerState, setTimerState] = useState(INITIAL_TIMER_STATE);
   const [strokes, setStrokes] = useState([]);
   const [isSyncingDrawing, setIsSyncingDrawing] = useState(false);
 
@@ -115,6 +123,7 @@ export function GameProvider({ children }) {
   const resetGameState = useCallback(() => {
     setGameState(INITIAL_GAME_STATE);
     setWordState(INITIAL_WORD_STATE);
+    setTimerState(INITIAL_TIMER_STATE);
     setStrokes([]);
     setLeaderboard([]);
     setGuessFeed([]);
@@ -147,6 +156,7 @@ export function GameProvider({ children }) {
     if (nextKey && nextKey !== currentTurnKeyRef.current) {
       currentTurnKeyRef.current = nextKey;
       setWordState(INITIAL_WORD_STATE);
+      setTimerState(INITIAL_TIMER_STATE);
       setStrokes([]);
       setHasGuessedCorrectly(false);
       setLastGuessFeedback(null);
@@ -198,6 +208,7 @@ export function GameProvider({ children }) {
       if (nextKey !== currentTurnKeyRef.current) {
         currentTurnKeyRef.current = nextKey;
         setWordState(INITIAL_WORD_STATE);
+        setTimerState(INITIAL_TIMER_STATE);
         setStrokes([]);
         setGuessFeed([]);
         setLastGuessFeedback(null);
@@ -245,6 +256,7 @@ export function GameProvider({ children }) {
       if (nextKey && nextKey !== currentTurnKeyRef.current) {
         currentTurnKeyRef.current = nextKey;
         setWordState(INITIAL_WORD_STATE);
+        setTimerState(INITIAL_TIMER_STATE);
         setStrokes([]);
         setLastGuessFeedback(null);
         setHasGuessedCorrectly(false);
@@ -293,6 +305,7 @@ export function GameProvider({ children }) {
       }));
       currentTurnKeyRef.current = null;
       setWordState(INITIAL_WORD_STATE);
+      setTimerState(INITIAL_TIMER_STATE);
       setStrokes([]);
       setGameState((prev) => ({
         ...prev,
@@ -447,6 +460,7 @@ export function GameProvider({ children }) {
     const handleRoundComplete = (event) => {
       if (!event) return;
       setLastRoundResult(event);
+      setTimerState((prev) => ({ ...prev, expired: true }));
       if (Array.isArray(event.leaderboard)) {
         setLeaderboard(event.leaderboard);
       }
@@ -454,6 +468,55 @@ export function GameProvider({ children }) {
         `round-complete:${event.currentRound}:${event.currentTurn}:${event.completedAt}`,
         'round_complete',
         `Round ${event.currentRound}, Turn ${event.currentTurn} ended (${event.reason})`
+      );
+    };
+
+    const handleWordHint = (event) => {
+      if (!event?.pattern) return;
+      setWordState((prev) => ({
+        ...prev,
+        assignedWord: prev.assignedWord
+          ? { ...prev.assignedWord, pattern: event.pattern }
+          : null,
+        publicWord: prev.publicWord
+          ? { ...prev.publicWord, pattern: event.pattern }
+          : {
+              drawerPlayerId: null,
+              wordLength: [...event.pattern].filter((c) => !/\s/u.test(c)).length,
+              pattern: event.pattern,
+              safeHints: {},
+            },
+        hintProgress: {
+          hintNumber: event.hintNumber,
+          hintCount: event.hintCount,
+          pattern: event.pattern,
+        },
+      }));
+      appendLog(
+        `hint:${event.currentRound}:${event.currentTurn}:${event.hintNumber}`,
+        'hint',
+        `Hint ${event.hintNumber} of ${event.hintCount} revealed`
+      );
+    };
+
+    const handleTurnTimerStarted = (event) => {
+      if (!event?.turnEndsAt) return;
+      setTimerState({
+        durationSeconds: event.durationSeconds ?? null,
+        turnEndsAt: event.turnEndsAt,
+        expired: false,
+      });
+    };
+
+    const handleTurnTimerExpired = () => {
+      setTimerState((prev) => ({
+        ...prev,
+        expired: true,
+      }));
+      appendLog(
+        `timer-expired:${currentTurnKeyRef.current || ''}`,
+        'timer',
+        'Time expired for this turn'
       );
     };
 
@@ -484,6 +547,9 @@ export function GameProvider({ children }) {
     socket.on('scoreboard_updated', handleScoreboardUpdated);
     socket.on('round_complete', handleRoundComplete);
     socket.on('leaderboard_final', handleLeaderboardFinal);
+    socket.on('word_hint', handleWordHint);
+    socket.on('turn_timer_started', handleTurnTimerStarted);
+    socket.on('turn_timer_expired', handleTurnTimerExpired);
 
     return () => {
       socket.off('game_start', handleGameStart);
@@ -500,6 +566,9 @@ export function GameProvider({ children }) {
       socket.off('scoreboard_updated', handleScoreboardUpdated);
       socket.off('round_complete', handleRoundComplete);
       socket.off('leaderboard_final', handleLeaderboardFinal);
+      socket.off('word_hint', handleWordHint);
+      socket.off('turn_timer_started', handleTurnTimerStarted);
+      socket.off('turn_timer_expired', handleTurnTimerExpired);
     };
   }, [
     socket,
@@ -682,6 +751,7 @@ export function GameProvider({ children }) {
     () => ({
       gameState,
       wordState,
+      timerState,
       strokes,
       isSyncingDrawing,
       leaderboard: effectiveLeaderboard,
@@ -722,6 +792,7 @@ export function GameProvider({ children }) {
     [
       gameState,
       wordState,
+      timerState,
       strokes,
       isSyncingDrawing,
       effectiveLeaderboard,

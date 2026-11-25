@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Room } from '../models/Room.js';
 import { Word, WORD_CATEGORIES } from '../models/Word.js';
 import { ApiError } from '../utils/ApiError.js';
+import { startTurnTimer } from './timer.service.js';
 
 const idOf = (value) => String(value);
 
@@ -151,6 +152,9 @@ export async function selectWord({ socket, io, payload }) {
 
   const word = await Word.findOne({ _id: wordId, isActive: true });
   if (!word) throw new ApiError(400, 'Selected word is no longer available', 'INVALID_WORD_SELECTION');
+  const turnEndsAt = Number.isInteger(room.settings.drawingTime)
+    ? new Date(Date.now() + room.settings.drawingTime * 1000)
+    : null;
   const updated = await Room.findOneAndUpdate(
     {
       _id: room._id,
@@ -173,6 +177,9 @@ export async function selectWord({ socket, io, payload }) {
           .filter((item) => item.isConnected && idOf(item.playerId) !== idOf(room.currentDrawerPlayerId))
           .map((item) => item.playerId),
         correctGuesserIds: [],
+        turnEndsAt,
+        hintLevel: 0,
+        revealedLetterPositions: [],
       },
     },
     { new: true }
@@ -183,5 +190,21 @@ export async function selectWord({ socket, io, payload }) {
   const privateInfo = privateWordInfo(updated, word);
   io.to(updated.code).except(socket.id).emit('word_selected', publicInfo);
   socket.emit('word_assigned', privateInfo);
+  startTurnTimer({
+    io,
+    room: {
+      _id: updated._id,
+      code: updated.code,
+      gameStatus: updated.gameStatus,
+      roundStatus: updated.roundStatus,
+      currentRound: updated.currentRound,
+      currentTurn: updated.currentTurn,
+      currentDrawerPlayerId: updated.currentDrawerPlayerId,
+      currentWordId: word._id,
+      currentWordText: word.text,
+      turnEndsAt,
+      settings: updated.settings,
+    },
+  });
   return privateInfo;
 }

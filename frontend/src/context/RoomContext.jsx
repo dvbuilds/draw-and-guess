@@ -8,6 +8,7 @@ import {
 import {
   joinLobbySocket,
   leaveLobbySocket,
+  sendChatMessageSocket,
 } from '../services/socket.js';
 import {
   clearStoredRoomSession,
@@ -53,6 +54,9 @@ export function RoomProvider({ children }) {
   const [lobbyStatus, setLobbyStatus] = useState('idle'); // idle | joining | joined | error
   const [syncedGameState, setSyncedGameState] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [chatError, setChatError] = useState(null);
   const [error, setError] = useState(null);
 
   const activeLobbyRef = useRef({ roomCode: null, inviteToken: null });
@@ -107,6 +111,8 @@ export function RoomProvider({ children }) {
       setLobbyStatus('idle');
       setSyncedGameState(null);
       setActivityLog([]);
+      setChatMessages([]);
+      setChatError(null);
       return created;
     },
     [playerId, identityToken, persistRoom, socket]
@@ -137,6 +143,8 @@ export function RoomProvider({ children }) {
       setLobbyStatus('idle');
       setSyncedGameState(null);
       setActivityLog([]);
+      setChatMessages([]);
+      setChatError(null);
       return joined;
     },
     [playerId, identityToken, persistRoom, socket]
@@ -204,6 +212,8 @@ export function RoomProvider({ children }) {
         setLobbyStatus('idle');
         setSyncedGameState(null);
         setActivityLog([]);
+        setChatMessages([]);
+        setChatError(null);
         setError(null);
       }
     },
@@ -218,7 +228,30 @@ export function RoomProvider({ children }) {
     setLobbyStatus('idle');
     setSyncedGameState(null);
     setActivityLog([]);
+    setChatMessages([]);
+    setChatError(null);
     setError(null);
+  }, []);
+
+  const sendChatMessage = useCallback(async (rawMessage) => {
+    setIsSendingChat(true);
+    setChatError(null);
+    try {
+      return await sendChatMessageSocket(rawMessage);
+    } catch (err) {
+      const normalized = {
+        code: err?.code || 'CHAT_SEND_FAILED',
+        message: err?.message || 'Unable to send chat message',
+      };
+      setChatError(normalized);
+      throw normalized;
+    } finally {
+      setIsSendingChat(false);
+    }
+  }, []);
+
+  const clearChatError = useCallback(() => {
+    setChatError(null);
   }, []);
 
   const clearError = useCallback(() => {
@@ -265,14 +298,27 @@ export function RoomProvider({ children }) {
       });
     };
 
+    const handleChatMessage = (event) => {
+      if (!event?.message) return;
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `${event.sentAt || Date.now()}-${event.playerId}-${Math.random().toString(36).slice(2, 6)}`,
+          ...event,
+        },
+      ].slice(-100));
+    };
+
     socket.on('player_joined', handlePlayerJoined);
     socket.on('player_left', handlePlayerLeft);
     socket.on('lobby_error', handleLobbyError);
+    socket.on('chat:message', handleChatMessage);
 
     return () => {
       socket.off('player_joined', handlePlayerJoined);
       socket.off('player_left', handlePlayerLeft);
       socket.off('lobby_error', handleLobbyError);
+      socket.off('chat:message', handleChatMessage);
     };
   }, [socket, appendActivity]);
 
@@ -320,11 +366,16 @@ export function RoomProvider({ children }) {
       socketStatus,
       isSocketConnected: isConnected,
       activityLog,
+      chatMessages,
+      isSendingChat,
+      chatError,
       error,
       createRoom,
       joinRoom,
       connectToLobby,
       leaveLobby,
+      sendChatMessage,
+      clearChatError,
       syncPlayers,
       clearRoomState,
       clearError,
@@ -340,11 +391,16 @@ export function RoomProvider({ children }) {
       socketStatus,
       isConnected,
       activityLog,
+      chatMessages,
+      isSendingChat,
+      chatError,
       error,
       createRoom,
       joinRoom,
       connectToLobby,
       leaveLobby,
+      sendChatMessage,
+      clearChatError,
       syncPlayers,
       clearRoomState,
       clearError,

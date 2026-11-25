@@ -3,6 +3,7 @@ import app from './app.js';
 import { env } from './config/env.js';
 import { connectDB, disconnectDB } from './config/db.js';
 import { initSocket } from './sockets/index.js';
+import { resumeActiveTurnTimers, stopAllTurnTimers } from './services/timer.service.js';
 
 const server = http.createServer(app);
 const io = initSocket(server);
@@ -11,6 +12,7 @@ const io = initSocket(server);
 app.set('io', io);
 
 await connectDB();
+await resumeActiveTurnTimers(io);
 
 server.listen(env.PORT, () => {
   console.log(`[server] running on http://localhost:${env.PORT} (${env.NODE_ENV})`);
@@ -18,6 +20,7 @@ server.listen(env.PORT, () => {
 
 async function shutdown(signal) {
   console.log(`\n[server] ${signal} received, shutting down`);
+  stopAllTurnTimers();
   io.close();
   server.close(async () => {
     await disconnectDB();

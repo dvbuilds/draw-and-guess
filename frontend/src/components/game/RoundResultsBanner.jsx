@@ -3,6 +3,7 @@ import { Badge, Button, Card } from '../ui/index.js';
 const REASON_LABELS = {
   all_guessed: 'Everyone guessed the word!',
   host_advanced: 'Host ended the turn',
+  timer_expired: 'Turn timer expired',
   drawer_disconnected: 'Drawer disconnected',
   drawer_left: 'Drawer left the room',
 };

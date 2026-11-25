@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ChatPanel } from '../components/game/ChatPanel.jsx';
 import { LobbyActivityFeed } from '../components/lobby/LobbyActivityFeed.jsx';
 import { LobbyConnectionBanner } from '../components/lobby/LobbyConnectionBanner.jsx';
 import { LobbyHostControls } from '../components/lobby/LobbyHostControls.jsx';
 import { LobbyPlayerList } from '../components/lobby/LobbyPlayerList.jsx';
 import { PlayerIdentityCard } from '../components/player/PlayerIdentityCard.jsx';
+import { InviteShareCard } from '../components/room/InviteShareCard.jsx';
 import { Badge, Button, Card } from '../components/ui/index.js';
 import { useLobby } from '../hooks/useLobby.js';
 import { usePlayer } from '../hooks/usePlayer.js';
+import { useRoom } from '../hooks/useRoom.js';
 
 export function LobbyPage() {
   const { roomCode: paramCode } = useParams();
@@ -16,6 +19,7 @@ export function LobbyPage() {
 
   const inviteTokenParam = (searchParams.get('inviteToken') || '').trim();
   const { playerId, hasIdentity, isRestoring } = usePlayer();
+  const { chatMessages, isSendingChat, chatError, sendChatMessage, clearChatError } = useRoom();
 
   const {
     room,
@@ -181,17 +185,27 @@ export function LobbyPage() {
         </Card>
       ) : (
         <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
-          {/* Left Column: Live Player Roster */}
+          {/* Left Column: Live Player Roster & Room Chat */}
           <div className="space-y-6 lg:col-span-7">
             <LobbyPlayerList
               players={players}
               currentPlayerId={playerId}
               maxPlayers={room?.settings?.maxPlayers}
             />
+            <ChatPanel
+              title="Lobby Chat"
+              messages={chatMessages}
+              currentPlayerId={playerId}
+              isConnected={isSocketConnected && lobbyStatus === 'joined'}
+              isSending={isSendingChat}
+              error={chatError}
+              onSendMessage={sendChatMessage}
+              onClearError={clearChatError}
+            />
             <LobbyActivityFeed events={activityLog} />
           </div>
 
-          {/* Right Column: Host Controls & Room Summary */}
+          {/* Right Column: Host Controls, Invite Link & Room Summary */}
           <div className="space-y-6 lg:col-span-5">
             <LobbyHostControls
               isHost={isHost}
@@ -203,6 +217,13 @@ export function LobbyPage() {
               gameStatus={gameStatus}
               onStartGame={startGame}
               error={error}
+            />
+
+            <InviteShareCard
+              roomCode={roomCode}
+              isPublic={room?.isPublic ?? !effectiveInviteToken}
+              inviteLink={shareableInviteLink}
+              inviteToken={effectiveInviteToken}
             />
 
             {room?.settings && (

@@ -4,6 +4,7 @@ import { joinLobby, leaveLobby } from '../services/lobby.service.js';
 import { advanceGameTurn, initializeGame } from '../services/gameInitialization.service.js';
 import { selectWord } from '../services/wordSelection.service.js';
 import { submitGuess } from '../services/guessValidation.service.js';
+import { sendChatMessage } from '../services/chat.service.js';
 import { addDrawingSegment, clearDrawing, syncDrawing, undoDrawing } from '../services/drawing.service.js';
 
 function socketError(err) {
@@ -56,6 +57,7 @@ export function initSocket(httpServer) {
     registerRequest(socket, 'game:next_turn', () => advanceGameTurn({ socket, io }));
     registerRequest(socket, 'word:select', (payload) => selectWord({ socket, io, payload }));
     registerRequest(socket, 'guess:submit', (payload) => submitGuess({ socket, io, payload }));
+    registerRequest(socket, 'chat:send', (payload) => sendChatMessage({ socket, io, payload }));
     registerRequest(socket, 'drawing:stroke', (payload) => addDrawingSegment({ socket, io, payload }));
     registerRequest(socket, 'drawing:undo', () => undoDrawing({ socket, io }));
     registerRequest(socket, 'drawing:clear', () => clearDrawing({ socket, io }));
