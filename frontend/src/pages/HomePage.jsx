@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { PlayerIdentityCard } from '../components/player/PlayerIdentityCard.jsx';
 import { Badge, Button, Card, StatusIndicator } from '../components/ui/index.js';
 import { env } from '../config/env.js';
@@ -39,6 +40,10 @@ const HOW_IT_WORKS = [
 ];
 
 export function HomePage() {
+  const location = useLocation();
+  const inviteParams = new URLSearchParams(location.search);
+  const invitedRoomCode = inviteParams.get('roomCode');
+
   const { status: socketStatus, isConnected, socketId, error: socketError, connect, disconnect, ping } =
     useSocket();
 
@@ -81,8 +86,14 @@ export function HomePage() {
   }, [ping]);
 
   useEffect(() => {
-    checkHealth();
-  }, [checkHealth]);
+    if (!invitedRoomCode) {
+      checkHealth();
+    }
+  }, [checkHealth, invitedRoomCode]);
+
+  if (invitedRoomCode) {
+    return <Navigate to={`/join${location.search}`} replace />;
+  }
 
   const apiIndicatorState = healthLoading
     ? 'connecting'
@@ -99,7 +110,7 @@ export function HomePage() {
         <div className="space-y-5 lg:col-span-7">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="amber">Sketch &amp; Guess Party Game</Badge>
-            <Badge variant="slate">Guest Identity Ready</Badge>
+            <Badge variant="slate">Room Management Ready</Badge>
           </div>
 
           <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
@@ -110,9 +121,22 @@ export function HomePage() {
           </h1>
 
           <p className="max-w-xl text-base leading-relaxed text-slate-600 sm:text-lg">
-            Pick a guest nickname to establish your player identity. Your session token is
-            saved locally and restored automatically when you return.
+            Pick a guest nickname, then create a custom public or private room or join
+            friends using an 8-character room code or invite link.
           </p>
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <Link to="/create">
+              <Button variant="primary" size="lg">
+                Create a Room
+              </Button>
+            </Link>
+            <Link to="/join">
+              <Button variant="secondary" size="lg">
+                Join with Code
+              </Button>
+            </Link>
+          </div>
 
           {/* Decorative Color Swatches */}
           <div className="flex items-center gap-2 pt-1">
