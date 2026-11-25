@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { env } from '../config/env.js';
 import { Player } from '../models/Player.js';
 import { Room } from '../models/Room.js';
+import { WORD_CATEGORIES, WORD_LANGUAGE_CODES } from '../models/Word.js';
 import { validateGuestIdentity } from './playerIdentity.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
@@ -13,6 +14,10 @@ const DEFAULT_SETTINGS = {
   hints: 3,
   hintsEnabled: true,
   wordMode: 'Normal',
+  language: 'en',
+  wordCategories: [],
+  voteKickEnabled: true,
+  voteKickThreshold: 60,
   scoring: { correctGuessPoints: 100, drawerPointsPerCorrectGuess: 50 },
 };
 const WORD_MODES = new Set(['Normal', 'Hidden', 'Combination']);
@@ -44,6 +49,24 @@ export function validateRoomSettings(input = {}) {
   if (!scoringInput || typeof scoringInput !== 'object' || Array.isArray(scoringInput)) {
     throw new ApiError(400, 'scoring must be an object', 'VALIDATION_ERROR');
   }
+  const language = input.language ?? DEFAULT_SETTINGS.language;
+  if (!WORD_LANGUAGE_CODES.includes(language)) {
+    throw new ApiError(400, `language must be one of: ${WORD_LANGUAGE_CODES.join(', ')}`, 'VALIDATION_ERROR');
+  }
+  const wordCategories = input.wordCategories ?? [];
+  if (!Array.isArray(wordCategories) || wordCategories.some((category) => !WORD_CATEGORIES.includes(category))
+      || new Set(wordCategories).size !== wordCategories.length) {
+    throw new ApiError(400, 'wordCategories must contain unique supported categories', 'VALIDATION_ERROR');
+  }
+  if (wordMode === 'Combination'
+      ? wordCategories.some((category) => category !== 'Combination')
+      : wordCategories.includes('Combination')) {
+    throw new ApiError(400, 'wordCategories must match the configured wordMode', 'VALIDATION_ERROR');
+  }
+  const voteKickEnabled = input.voteKickEnabled ?? DEFAULT_SETTINGS.voteKickEnabled;
+  if (typeof voteKickEnabled !== 'boolean') {
+    throw new ApiError(400, 'voteKickEnabled must be a boolean', 'VALIDATION_ERROR');
+  }
   return {
     maxPlayers: validateInteger(input, 'maxPlayers', 2, 20, DEFAULT_SETTINGS.maxPlayers),
     rounds: validateInteger(input, 'rounds', 2, 10, DEFAULT_SETTINGS.rounds),
@@ -52,6 +75,10 @@ export function validateRoomSettings(input = {}) {
     hints,
     hintsEnabled,
     wordMode,
+    language,
+    wordCategories,
+    voteKickEnabled,
+    voteKickThreshold: validateInteger(input, 'voteKickThreshold', 50, 100, DEFAULT_SETTINGS.voteKickThreshold),
     scoring: {
       correctGuessPoints: validateInteger(scoringInput, 'correctGuessPoints', 1, 1000, DEFAULT_SETTINGS.scoring.correctGuessPoints),
       drawerPointsPerCorrectGuess: validateInteger(scoringInput, 'drawerPointsPerCorrectGuess', 0, 1000, DEFAULT_SETTINGS.scoring.drawerPointsPerCorrectGuess),
@@ -101,6 +128,10 @@ function roomResponse(room, inviteToken) {
       wordChoices: room.settings.wordChoices,
       hints: room.settings.hintsEnabled ? room.settings.hints : 'disabled',
       wordMode: room.settings.wordMode,
+      language: room.settings.language ?? 'en',
+      wordCategories: room.settings.wordCategories ?? [],
+      voteKickEnabled: room.settings.voteKickEnabled ?? true,
+      voteKickThreshold: room.settings.voteKickThreshold ?? 60,
       scoring: {
         correctGuessPoints: room.settings.scoring.correctGuessPoints,
         drawerPointsPerCorrectGuess: room.settings.scoring.drawerPointsPerCorrectGuess,
@@ -168,6 +199,9 @@ export async function joinRoom(input = {}) {
   }
 
   const playerId = String(player._id);
+  if ((room.bannedPlayerIds ?? []).some((id) => String(id) === playerId)) {
+    throw new ApiError(403, 'This player is banned from the room', 'PLAYER_BANNED');
+  }
   const existing = room.members.find((member) => String(member.playerId) === playerId);
   if (existing) throw new ApiError(409, 'Player is already a member of this room', 'ALREADY_IN_ROOM');
   const normalizedDisplayName = normalizeName(player.displayName);

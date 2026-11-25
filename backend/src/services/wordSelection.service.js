@@ -12,6 +12,13 @@ function eligibleCategories(wordMode) {
   return WORD_CATEGORIES.filter((category) => category !== 'Combination');
 }
 
+function categoriesForSettings(settings) {
+  const allowed = eligibleCategories(settings.wordMode);
+  const requested = settings.wordCategories ?? [];
+  if (!Array.isArray(requested)) return [];
+  return requested.length ? requested.filter((category) => allowed.includes(category)) : allowed;
+}
+
 function sampleWithoutReplacement(values, count) {
   const shuffled = [...values];
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
@@ -26,8 +33,10 @@ export async function prepareWordOptions(settings) {
   if (!Number.isInteger(count) || count < 1 || count > 5) {
     throw new ApiError(500, 'Room word choice settings are invalid', 'INVALID_WORD_SETTINGS');
   }
-  const categories = eligibleCategories(settings.wordMode);
-  const candidates = await Word.find({ isActive: true, category: { $in: categories } });
+  const categories = categoriesForSettings(settings);
+  const language = settings.language ?? 'en';
+  if (!categories.length) throw new ApiError(400, 'No word categories are available for this word mode', 'INVALID_WORD_CATEGORIES');
+  const candidates = await Word.find({ isActive: true, language, category: { $in: categories } });
   const options = sampleWithoutReplacement(candidates, count);
   if (options.length !== count) {
     throw new ApiError(503, `At least ${count} active words are required for this mode`, 'NOT_ENOUGH_WORDS');
@@ -38,6 +47,7 @@ export async function prepareWordOptions(settings) {
       wordId: idOf(word._id),
       word: word.text,
       category: word.category,
+      language: word.language ?? language,
     })),
   };
 }
@@ -150,7 +160,8 @@ export async function selectWord({ socket, io, payload }) {
     throw new ApiError(400, 'Select one of the word options sent to the drawer', 'INVALID_WORD_SELECTION');
   }
 
-  const word = await Word.findOne({ _id: wordId, isActive: true });
+  const language = room.gameLanguage ?? room.settings.language ?? 'en';
+  const word = await Word.findOne({ _id: wordId, isActive: true, language });
   if (!word) throw new ApiError(400, 'Selected word is no longer available', 'INVALID_WORD_SELECTION');
   const turnEndsAt = Number.isInteger(room.settings.drawingTime)
     ? new Date(Date.now() + room.settings.drawingTime * 1000)

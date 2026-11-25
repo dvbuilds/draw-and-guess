@@ -85,6 +85,13 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
   if (!validateRoomInvitation(room, payload.inviteToken)) {
     throw new ApiError(403, 'A valid invite token is required for this private room', 'PRIVATE_ROOM');
   }
+  if ((room.bannedPlayerIds ?? []).some((id) => playerIdOf(id) === playerId)) {
+    throw new ApiError(403, 'This player is banned from the room', 'PLAYER_BANNED');
+  }
+  if (room.gameStatus === 'started'
+      && (room.kickedPlayerIds ?? []).some((id) => playerIdOf(id) === playerId)) {
+    throw new ApiError(403, 'This player was kicked from the active game', 'PLAYER_KICKED');
+  }
 
   const player = await Player.findById(playerId);
   const member = findMember(room, playerId);
@@ -153,6 +160,7 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
         currentRound: room.currentRound,
         currentTurn: room.currentTurn,
         totalRounds: room.totalRounds,
+        language: room.gameLanguage ?? room.settings.language ?? 'en',
         currentDrawerPlayerId: room.currentDrawerPlayerId ? playerIdOf(room.currentDrawerPlayerId) : null,
       }
       : null,

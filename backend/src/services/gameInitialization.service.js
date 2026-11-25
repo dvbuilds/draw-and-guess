@@ -24,6 +24,7 @@ function gameState(room) {
     currentRound: room.currentRound,
     currentTurn: room.currentTurn,
     totalRounds: room.totalRounds,
+    language: room.gameLanguage ?? room.settings.language ?? 'en',
     currentDrawerPlayerId: room.currentDrawerPlayerId ? idOf(room.currentDrawerPlayerId) : null,
     players: players(room),
   };
@@ -128,7 +129,10 @@ async function advanceTurn({ io, room, reason }) {
   if (!next || next.complete) {
     return completeGame({ io, room, reason: next?.noConnectedPlayers ? 'no_connected_players' : 'rounds_complete' });
   }
-  const preparedWords = await prepareWordOptions(room.settings);
+  const preparedWords = await prepareWordOptions({
+    ...room.settings,
+    language: room.gameLanguage ?? room.settings.language ?? 'en',
+  });
 
   const updated = await Room.findOneAndUpdate(
     stateFilter(room),
@@ -192,7 +196,8 @@ export async function initializeGame({ socket, io }) {
     throw new ApiError(409, `At least ${MIN_PLAYERS_TO_START} connected players are required to start`, 'NOT_ENOUGH_PLAYERS');
   }
 
-  const preparedWords = await prepareWordOptions(room.settings);
+  const gameLanguage = room.settings.language ?? 'en';
+  const preparedWords = await prepareWordOptions({ ...room.settings, language: gameLanguage });
   const turnOrder = connectedMembers.map((member) => member.playerId);
   const startedAt = new Date();
   const started = await Room.findOneAndUpdate(
@@ -228,6 +233,7 @@ export async function initializeGame({ socket, io }) {
         gameStartedAt: startedAt,
         gameCompletedAt: null,
         totalRounds: room.settings.rounds,
+        gameLanguage,
         currentRound: 1,
         currentTurn: 1,
         turnOrder,
@@ -246,6 +252,7 @@ export async function initializeGame({ socket, io }) {
         revealedLetterPositions: [],
         finalLeaderboard: [],
         winnerPlayerIds: [],
+        kickedPlayerIds: [],
         'members.$[].score': 0,
       },
     },

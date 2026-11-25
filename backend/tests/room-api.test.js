@@ -110,7 +110,7 @@ function identity(id = '111111111111111111111111', token = 'host-secret') {
 test('creates public and private rooms, validates settings, and assigns creator as host', async () => {
   const publicResponse = await post('/', {
     ...identity(),
-    settings: { maxPlayers: 20, rounds: 10, drawingTime: 240, wordChoices: 5, hints: 0, wordMode: 'Combination' },
+    settings: { maxPlayers: 20, rounds: 10, drawingTime: 240, wordChoices: 5, hints: 0, wordMode: 'Combination', language: 'es', wordCategories: ['Combination'], voteKickEnabled: true, voteKickThreshold: 75 },
   });
   assert.equal(publicResponse.status, 201);
   const publicRoom = (await publicResponse.json()).data;
@@ -118,6 +118,9 @@ test('creates public and private rooms, validates settings, and assigns creator 
   assert.equal(publicRoom.hostPlayerId, '111111111111111111111111');
   assert.equal(publicRoom.members[0].role, 'host');
   assert.equal(publicRoom.settings.hints, 0);
+  assert.equal(publicRoom.settings.language, 'es');
+  assert.deepEqual(publicRoom.settings.wordCategories, ['Combination']);
+  assert.equal(publicRoom.settings.voteKickThreshold, 75);
   assert.equal(typeof publicRoom.inviteLink, 'string');
   assert.equal(publicRoom.inviteToken, undefined);
 
@@ -133,6 +136,8 @@ test('creates public and private rooms, validates settings, and assigns creator 
     { maxPlayers: 1 }, { maxPlayers: 21 }, { rounds: 1 }, { rounds: 11 },
     { drawingTime: 14 }, { drawingTime: 241 }, { wordChoices: 0 }, { wordChoices: 6 },
     { hints: -1 }, { hints: 6 }, { wordMode: 'Other' },
+    { language: 'de' }, { wordCategories: ['Unknown'] },
+    { wordMode: 'Normal', wordCategories: ['Combination'] }, { voteKickThreshold: 101 },
   ]) {
     const response = await post('/', { ...identity(), settings });
     assert.equal(response.status, 400, JSON.stringify(settings));

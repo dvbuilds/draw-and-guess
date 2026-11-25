@@ -5,13 +5,13 @@ import { buildLeaderboard, completeRound, scoringRules } from './scoring.service
 
 const idOf = (value) => String(value);
 
-export function normalizeGuess(value) {
+export function normalizeGuess(value, language = 'en') {
   if (typeof value !== 'string' || value.length > 64) {
     throw new ApiError(400, 'Guess must be a word or phrase of at most 64 characters', 'INVALID_GUESS');
   }
   const normalized = value.normalize('NFKC')
     .trim()
-    .toLocaleLowerCase('en')
+    .toLocaleLowerCase(language)
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
   if (!normalized) throw new ApiError(400, 'Guess cannot be empty', 'INVALID_GUESS');
@@ -21,7 +21,6 @@ export function normalizeGuess(value) {
 export async function submitGuess({ socket, io, payload }) {
   const session = socket.data.lobby;
   if (!session) throw new ApiError(403, 'Join a room before guessing', 'NOT_IN_ROOM');
-  const guess = normalizeGuess(payload?.guess);
   const room = await Room.findById(session.roomId).select('+currentWordId +currentWordText');
   if (!room) throw new ApiError(404, 'Room was not found', 'ROOM_NOT_FOUND');
   if (!socket.rooms.has(room.code)) throw new ApiError(403, 'Socket is not connected to this room', 'NOT_IN_ROOM');
@@ -33,6 +32,8 @@ export async function submitGuess({ socket, io, payload }) {
   if (!member?.isConnected || member.socketId !== socket.id) {
     throw new ApiError(403, 'This is not the active player connection', 'INVALID_ROOM_MEMBER');
   }
+  const language = room.gameLanguage ?? room.settings.language ?? 'en';
+  const guess = normalizeGuess(payload?.guess, language);
   if (idOf(room.currentDrawerPlayerId) === playerId) {
     throw new ApiError(403, 'The drawer cannot guess their own word', 'DRAWER_CANNOT_GUESS');
   }
@@ -43,7 +44,7 @@ export async function submitGuess({ socket, io, payload }) {
     throw new ApiError(409, 'This player has already guessed correctly this round', 'ALREADY_GUESSED');
   }
 
-  const correct = guess === normalizeGuess(room.currentWordText);
+  const correct = guess === normalizeGuess(room.currentWordText, language);
   if (!correct) {
     const feedback = {
       correct: false,

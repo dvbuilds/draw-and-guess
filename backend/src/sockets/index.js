@@ -5,6 +5,9 @@ import { advanceGameTurn, initializeGame } from '../services/gameInitialization.
 import { selectWord } from '../services/wordSelection.service.js';
 import { submitGuess } from '../services/guessValidation.service.js';
 import { sendChatMessage } from '../services/chat.service.js';
+import { kickPlayer, banPlayer } from '../services/moderation.service.js';
+import { startVoteKick, castVoteKick } from '../services/voteKick.service.js';
+import { broadcastAnnouncement } from '../services/announcement.service.js';
 import { addDrawingSegment, clearDrawing, syncDrawing, undoDrawing } from '../services/drawing.service.js';
 
 function socketError(err) {
@@ -58,6 +61,11 @@ export function initSocket(httpServer) {
     registerRequest(socket, 'word:select', (payload) => selectWord({ socket, io, payload }));
     registerRequest(socket, 'guess:submit', (payload) => submitGuess({ socket, io, payload }));
     registerRequest(socket, 'chat:send', (payload) => sendChatMessage({ socket, io, payload }));
+    registerRequest(socket, 'moderation:kick', (payload) => kickPlayer({ socket, io, payload }));
+    registerRequest(socket, 'moderation:ban', (payload) => banPlayer({ socket, io, payload }));
+    registerRequest(socket, 'vote_kick:start', (payload) => startVoteKick({ socket, io, payload }));
+    registerRequest(socket, 'vote_kick:cast', (payload) => castVoteKick({ socket, io, payload }));
+    registerRequest(socket, 'announcement:send', (payload) => broadcastAnnouncement({ socket, io, payload }));
     registerRequest(socket, 'drawing:stroke', (payload) => addDrawingSegment({ socket, io, payload }));
     registerRequest(socket, 'drawing:undo', () => undoDrawing({ socket, io }));
     registerRequest(socket, 'drawing:clear', () => clearDrawing({ socket, io }));
