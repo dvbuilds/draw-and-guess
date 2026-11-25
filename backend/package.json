@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
+    "test": "node --test",
     "test:socket": "node scripts/socket-test.js"
   },
 
