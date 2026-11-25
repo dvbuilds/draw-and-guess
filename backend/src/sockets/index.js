@@ -1,5 +1,29 @@
 import { Server } from 'socket.io';
 import { env } from '../config/env.js';
+import { joinLobby, leaveLobby, startLobbyGame } from '../services/lobby.service.js';
+
+function socketError(err) {
+  return {
+    code: err.statusCode ? err.code : 'INTERNAL_ERROR',
+    message: err.statusCode ? err.message : 'Unable to complete the lobby action',
+  };
+}
+
+function registerRequest(socket, eventName, handler) {
+  socket.on(eventName, (payload, ack) => {
+    Promise.resolve()
+      .then(() => handler(payload))
+      .then((data) => {
+        if (typeof ack === 'function') ack({ success: true, data });
+      })
+      .catch((err) => {
+        console.warn(`[socket] ${eventName} failed: ${err.message}`);
+        const error = socketError(err);
+        if (typeof ack === 'function') ack({ success: false, error });
+        else socket.emit('lobby_error', error);
+      });
+  });
+}
 
 export function initSocket(httpServer) {
   const io = new Server(httpServer, {
@@ -18,11 +42,17 @@ export function initSocket(httpServer) {
       }
     });
 
-    // Later modules register their handlers here, e.g.
-    // registerPlayerHandlers(io, socket);
-    // registerRoomHandlers(io, socket);
+    registerRequest(socket, 'lobby:join', (payload) => joinLobby({ socket, io, payload }));
+    registerRequest(socket, 'lobby:leave', (payload = {}) => leaveLobby({
+      io,
+      socket,
+      reason: typeof payload.reason === 'string' ? payload.reason.slice(0, 64) : 'left',
+    }));
+    registerRequest(socket, 'game:start', () => startLobbyGame({ socket, io }));
 
     socket.on('disconnect', (reason) => {
+      leaveLobby({ io, socket, reason, unexpected: true })
+        .catch((err) => console.error('[socket] disconnect cleanup failed:', err));
       console.log(`[socket] disconnected: ${socket.id} (${reason})`);
     });
   });
