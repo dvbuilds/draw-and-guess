@@ -3,10 +3,19 @@ import { usePlayer } from '../hooks/usePlayer.js';
 import { useRoom } from '../hooks/useRoom.js';
 import { useSocket } from '../hooks/useSocket.js';
 import {
+  clearDrawingSocket,
   nextTurnSocket,
   selectWordSocket,
+  sendDrawingStrokeSocket,
   startGameSocket,
+  syncDrawingSocket,
+  undoDrawingSocket,
 } from '../services/socket.js';
+import {
+  applyStrokeSegment,
+  applyUndoStroke,
+  hydrateStrokesFromSync,
+} from '../utils/drawingEngine.js';
 
 export const GameContext = createContext(null);
 
@@ -46,10 +55,12 @@ function turnKeyOf(round, turn, drawerId) {
 export function GameProvider({ children }) {
   const { playerId } = usePlayer();
   const { socket, isConnected } = useSocket();
-  const { roomCode, players, syncedGameState, syncPlayers } = useRoom();
+  const { roomCode, players, lobbyStatus, syncedGameState, syncPlayers } = useRoom();
 
   const [gameState, setGameState] = useState(INITIAL_GAME_STATE);
   const [wordState, setWordState] = useState(INITIAL_WORD_STATE);
+  const [strokes, setStrokes] = useState([]);
+  const [isSyncingDrawing, setIsSyncingDrawing] = useState(false);
   const [gameLog, setGameLog] = useState([]);
   const [isStartingGame, setIsStartingGame] = useState(false);
   const [isAdvancingTurn, setIsAdvancingTurn] = useState(false);
@@ -69,6 +80,7 @@ export function GameProvider({ children }) {
   const resetGameState = useCallback(() => {
     setGameState(INITIAL_GAME_STATE);
     setWordState(INITIAL_WORD_STATE);
+    setStrokes([]);
     setGameLog([]);
     setError(null);
     lastLogKeyRef.current = null;
@@ -93,6 +105,7 @@ export function GameProvider({ children }) {
     if (nextKey && nextKey !== currentTurnKeyRef.current) {
       currentTurnKeyRef.current = nextKey;
       setWordState(INITIAL_WORD_STATE);
+      setStrokes([]);
     }
     setGameState((prev) => ({
       ...prev,
@@ -105,6 +118,27 @@ export function GameProvider({ children }) {
     }));
   }, [syncedGameState]);
 
+  const syncDrawing = useCallback(async () => {
+    if (!isConnected) return null;
+    setIsSyncingDrawing(true);
+    try {
+      const res = await syncDrawingSocket();
+      setStrokes(hydrateStrokesFromSync(res?.strokes || []));
+      return res;
+    } catch {
+      return null;
+    } finally {
+      setIsSyncingDrawing(false);
+    }
+  }, [isConnected]);
+
+  // Automatically sync active canvas snapshot whenever joined to a started game
+  useEffect(() => {
+    if (lobbyStatus === 'joined' && isConnected && gameState.status === 'started') {
+      syncDrawing();
+    }
+  }, [lobbyStatus, isConnected, gameState.status, syncDrawing]);
+
   const applyGameStart = useCallback(
     (payload) => {
       if (!payload) return;
@@ -116,10 +150,11 @@ export function GameProvider({ children }) {
       const drawerId = payload.currentDrawerPlayerId ?? null;
       const nextKey = turnKeyOf(round, turn, drawerId);
 
-      // Only reset word state when entering a new turn (prevents ack wiping word_options)
+      // Only reset turn state when entering a new turn (prevents ack wiping word_options)
       if (nextKey !== currentTurnKeyRef.current) {
         currentTurnKeyRef.current = nextKey;
         setWordState(INITIAL_WORD_STATE);
+        setStrokes([]);
       }
 
       setGameState({
@@ -157,6 +192,7 @@ export function GameProvider({ children }) {
       if (nextKey && nextKey !== currentTurnKeyRef.current) {
         currentTurnKeyRef.current = nextKey;
         setWordState(INITIAL_WORD_STATE);
+        setStrokes([]);
       }
 
       setGameState((prev) => ({
@@ -192,6 +228,7 @@ export function GameProvider({ children }) {
       }
       currentTurnKeyRef.current = null;
       setWordState(INITIAL_WORD_STATE);
+      setStrokes([]);
       setGameState((prev) => ({
         ...prev,
         status: 'completed',
@@ -237,7 +274,7 @@ export function GameProvider({ children }) {
     [playerId]
   );
 
-  // Subscribe to backend game & word management Socket.IO broadcasts
+  // Subscribe to backend game, word, and drawing Socket.IO broadcasts
   useEffect(() => {
     const handleGameStart = (event) => {
       applyGameStart(event);
@@ -267,14 +304,9 @@ export function GameProvider({ children }) {
       applyGameComplete(event);
     };
 
-    // Sent privately to the active drawer's socket
     const handleWordOptions = (event) => {
       if (!event || !Array.isArray(event.options)) return;
-      const nextKey = turnKeyOf(
-        event.currentRound,
-        event.currentTurn,
-        playerId
-      );
+      const nextKey = turnKeyOf(event.currentRound, event.currentTurn, playerId);
       if (nextKey) currentTurnKeyRef.current = nextKey;
       setWordState({
         phase: 'choosing',
@@ -285,12 +317,10 @@ export function GameProvider({ children }) {
       setError(null);
     };
 
-    // Sent privately to the active drawer's socket
     const handleWordAssigned = (event) => {
       applyWordAssigned(event);
     };
 
-    // Broadcast to non-drawer players (never includes the actual word)
     const handleWordSelected = (event) => {
       if (!event) return;
       setWordState({
@@ -313,6 +343,20 @@ export function GameProvider({ children }) {
       );
     };
 
+    const handleDrawingStroke = (event) => {
+      if (!event) return;
+      setStrokes((prev) => applyStrokeSegment(prev, event));
+    };
+
+    const handleDrawingUndone = (event) => {
+      if (!event) return;
+      setStrokes((prev) => applyUndoStroke(prev, event.strokeId));
+    };
+
+    const handleDrawingCleared = () => {
+      setStrokes([]);
+    };
+
     socket.on('game_start', handleGameStart);
     socket.on('round_started', handleRoundStarted);
     socket.on('game_turn', handleGameTurn);
@@ -320,6 +364,9 @@ export function GameProvider({ children }) {
     socket.on('word_options', handleWordOptions);
     socket.on('word_assigned', handleWordAssigned);
     socket.on('word_selected', handleWordSelected);
+    socket.on('drawing:stroke', handleDrawingStroke);
+    socket.on('drawing:undone', handleDrawingUndone);
+    socket.on('drawing:cleared', handleDrawingCleared);
 
     return () => {
       socket.off('game_start', handleGameStart);
@@ -329,6 +376,9 @@ export function GameProvider({ children }) {
       socket.off('word_options', handleWordOptions);
       socket.off('word_assigned', handleWordAssigned);
       socket.off('word_selected', handleWordSelected);
+      socket.off('drawing:stroke', handleDrawingStroke);
+      socket.off('drawing:undone', handleDrawingUndone);
+      socket.off('drawing:cleared', handleDrawingCleared);
     };
   }, [
     socket,
@@ -404,6 +454,56 @@ export function GameProvider({ children }) {
     [applyWordAssigned]
   );
 
+  const appendLocalSegment = useCallback((segment) => {
+    setStrokes((prev) => applyStrokeSegment(prev, segment));
+  }, []);
+
+  const sendStrokeSegment = useCallback(async (segment) => {
+    try {
+      return await sendDrawingStrokeSocket(segment);
+    } catch (err) {
+      setError({
+        code: err?.code || 'DRAWING_STROKE_FAILED',
+        message: err?.message || 'Unable to sync drawing stroke',
+      });
+      throw err;
+    }
+  }, []);
+
+  const undoDrawing = useCallback(async () => {
+    setError(null);
+    try {
+      const result = await undoDrawingSocket();
+      if (result?.undone) {
+        setStrokes((prev) => applyUndoStroke(prev, result.strokeId));
+      }
+      return result;
+    } catch (err) {
+      setError({
+        code: err?.code || 'DRAWING_UNDO_FAILED',
+        message: err?.message || 'Unable to undo stroke',
+      });
+      throw err;
+    }
+  }, []);
+
+  const clearDrawing = useCallback(async () => {
+    setError(null);
+    try {
+      const result = await clearDrawingSocket();
+      if (result?.cleared) {
+        setStrokes([]);
+      }
+      return result;
+    } catch (err) {
+      setError({
+        code: err?.code || 'DRAWING_CLEAR_FAILED',
+        message: err?.message || 'Unable to clear canvas',
+      });
+      throw err;
+    }
+  }, []);
+
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -424,6 +524,8 @@ export function GameProvider({ children }) {
     () => ({
       gameState,
       wordState,
+      strokes,
+      isSyncingDrawing,
       status: gameState.status,
       currentRound: gameState.currentRound,
       currentTurn: gameState.currentTurn,
@@ -440,12 +542,19 @@ export function GameProvider({ children }) {
       startGame,
       advanceTurn,
       selectWord,
+      appendLocalSegment,
+      sendStrokeSegment,
+      undoDrawing,
+      clearDrawing,
+      syncDrawing,
       resetGameState,
       clearError,
     }),
     [
       gameState,
       wordState,
+      strokes,
+      isSyncingDrawing,
       currentDrawer,
       isCurrentDrawer,
       isConnected,
@@ -457,6 +566,11 @@ export function GameProvider({ children }) {
       startGame,
       advanceTurn,
       selectWord,
+      appendLocalSegment,
+      sendStrokeSegment,
+      undoDrawing,
+      clearDrawing,
+      syncDrawing,
       resetGameState,
       clearError,
     ]

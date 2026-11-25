@@ -41,6 +41,8 @@ export function GamePage() {
   const {
     gameState,
     wordState,
+    strokes,
+    isSyncingDrawing,
     status: gameStatus,
     currentRound,
     currentTurn,
@@ -54,6 +56,10 @@ export function GamePage() {
     error: gameError,
     advanceTurn,
     selectWord,
+    appendLocalSegment,
+    sendStrokeSegment,
+    undoDrawing,
+    clearDrawing,
   } = useGame();
 
   const [leaving, setLeaving] = useState(false);
@@ -194,15 +200,11 @@ export function GamePage() {
           <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
             <div className="lg:col-span-8">
               <GameStagePlaceholder
-                roomCode={roomCode}
-                lobbyStatus={lobbyStatus}
                 isCurrentDrawer={isCurrentDrawer}
-                currentRound={currentRound}
-                currentTurn={currentTurn}
-                currentDrawerPlayerId={currentDrawerPlayerId}
-                canDraw={isCurrentDrawer && wordState.phase === 'selected' && gameStatus === 'started'}
                 currentDrawer={currentDrawer}
                 wordPhase={wordState.phase}
+                strokes={strokes}
+                isSyncingDrawing={isSyncingDrawing}
                 isHost={isHost}
                 hostPlayer={hostPlayer}
                 isSocketConnected={isSocketConnected}
@@ -210,6 +212,10 @@ export function GamePage() {
                 gameStatus={gameStatus}
                 gameLog={gameLog}
                 onAdvanceTurn={advanceTurn}
+                onStrokeSegment={appendLocalSegment}
+                onEmitSegment={sendStrokeSegment}
+                onUndoDrawing={undoDrawing}
+                onClearDrawing={clearDrawing}
                 error={gameError}
               />
             </div>

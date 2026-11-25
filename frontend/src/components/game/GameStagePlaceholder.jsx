@@ -1,16 +1,15 @@
+import { useState } from 'react';
+import { DRAWING_COLORS } from '../../utils/drawingEngine.js';
 import { Badge, Button, Card } from '../ui/index.js';
 import { DrawingCanvas } from './DrawingCanvas.jsx';
+import { DrawingToolbar } from './DrawingToolbar.jsx';
 
 export function GameStagePlaceholder({
-  roomCode,
-  lobbyStatus,
   isCurrentDrawer,
-  currentRound,
-  currentTurn,
-  currentDrawerPlayerId,
-  canDraw,
   currentDrawer,
   wordPhase = 'idle',
+  strokes = [],
+  isSyncingDrawing = false,
   isHost,
   hostPlayer,
   isSocketConnected,
@@ -18,42 +17,74 @@ export function GameStagePlaceholder({
   gameStatus,
   gameLog = [],
   onAdvanceTurn,
+  onStrokeSegment,
+  onEmitSegment,
+  onUndoDrawing,
+  onClearDrawing,
   error,
 }) {
-  const stageHeadline = isCurrentDrawer
-    ? wordPhase === 'selected'
-      ? 'Your word is ready. Draw it for the room.'
-      : 'Pick one of your word options above to begin'
-    : wordPhase === 'selected'
-      ? `${currentDrawer?.displayName || 'Drawer'} has selected a word`
-      : `Waiting for ${currentDrawer?.displayName || 'the drawer'} to select a word`;
+  const [tool, setTool] = useState('pen');
+  const [color, setColor] = useState(DRAWING_COLORS[0]);
+  const [brushSize, setBrushSize] = useState(6);
+
+  const canDraw =
+    isCurrentDrawer &&
+    gameStatus === 'started' &&
+    wordPhase === 'selected' &&
+    isSocketConnected;
+
+  let overlayMessage = null;
+  if (gameStatus === 'started' && isCurrentDrawer && wordPhase !== 'selected') {
+    overlayMessage = 'Select a word above to unlock the drawing canvas';
+  } else if (isSyncingDrawing) {
+    overlayMessage = 'Syncing canvas strokes...';
+  }
 
   return (
     <div className="space-y-6">
       <Card variant="elevated" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
           <div>
-            <h2 className="text-base font-extrabold text-slate-900">Game Stage</h2>
+            <h2 className="text-base font-extrabold text-slate-900">Drawing Canvas</h2>
             <p className="text-xs text-slate-500">
               {isCurrentDrawer
-                ? 'You are selected as the active drawer for this turn.'
-                : `${currentDrawer?.displayName || 'The active drawer'} has the turn.`}
+                ? wordPhase === 'selected'
+                  ? 'Use the toolbar below to sketch your word.'
+                  : 'Pick a word first to start drawing.'
+                : `Viewing ${currentDrawer?.displayName || 'the drawer'}'s live canvas.`}
             </p>
           </div>
-          <Badge variant="indigo">Phase 7 · Drawing</Badge>
+          <Badge variant={isCurrentDrawer ? 'indigo' : 'slate'}>
+            {isCurrentDrawer ? 'Drawer Controls Active' : 'View Only'}
+          </Badge>
         </div>
 
-        <p className="text-sm font-extrabold text-slate-800">{stageHeadline}</p>
+        {/* Drawing Toolbar visible ONLY to the active drawer */}
+        {isCurrentDrawer && gameStatus === 'started' && (
+          <DrawingToolbar
+            tool={tool}
+            color={color}
+            brushSize={brushSize}
+            disabled={!canDraw}
+            canUndo={strokes.length > 0}
+            canClear={strokes.length > 0}
+            onToolChange={setTool}
+            onColorChange={setColor}
+            onBrushSizeChange={setBrushSize}
+            onUndo={onUndoDrawing}
+            onClear={onClearDrawing}
+          />
+        )}
+
         <DrawingCanvas
-          roomCode={roomCode}
-          lobbyStatus={lobbyStatus}
-          gameStatus={gameStatus}
-          currentRound={currentRound}
-          currentTurn={currentTurn}
-          currentDrawerPlayerId={currentDrawerPlayerId}
-          isCurrentDrawer={isCurrentDrawer}
+          strokes={strokes}
           canDraw={canDraw}
-          isSocketConnected={isSocketConnected}
+          tool={tool}
+          color={color}
+          brushSize={brushSize}
+          overlayMessage={overlayMessage}
+          onStrokeSegment={onStrokeSegment}
+          onEmitSegment={onEmitSegment}
         />
 
         {/* Host Turn Control (triggers backend game:next_turn) */}
@@ -63,7 +94,7 @@ export function GameStagePlaceholder({
               {isHost ? (
                 <span>
                   <strong className="text-slate-800">Host Control:</strong> Advance to the next
-                  turn or round to test synchronization.
+                  turn or round.
                 </span>
               ) : (
                 <span>

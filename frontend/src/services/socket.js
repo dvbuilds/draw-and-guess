@@ -85,8 +85,8 @@ export function selectWordSocket(wordId) {
   return emitWithAck('word:select', { wordId });
 }
 
-export function sendDrawingStroke(payload) {
-  return emitWithAck('drawing:stroke', payload);
+export function sendDrawingStrokeSocket(segment) {
+  return emitWithAck('drawing:stroke', segment);
 }
 
 export function undoDrawingSocket() {

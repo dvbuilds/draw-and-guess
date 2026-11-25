@@ -1,254 +1,238 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { clearDrawingSocket, sendDrawingStroke, syncDrawingSocket, undoDrawingSocket } from '../../services/socket.js';
-import { useSocket } from '../../hooks/useSocket.js';
-import { Button } from '../ui/index.js';
-
-const CANVAS_WIDTH = 1200;
-const CANVAS_HEIGHT = 675;
-const PALETTE = ['#111827', '#DC2626', '#2563EB', '#16A34A', '#9333EA', '#F59E0B'];
-
-function drawSegments(canvas, segments) {
-  if (!canvas) return;
-  const context = canvas.getContext('2d');
-  if (!context) return;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = '#FFFFFF';
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.lineCap = 'round';
-  context.lineJoin = 'round';
-
-  for (const segment of segments) {
-    if (!Array.isArray(segment.points) || segment.points.length < 2) continue;
-    context.globalCompositeOperation = segment.tool === 'eraser' ? 'destination-out' : 'source-over';
-    context.strokeStyle = segment.color;
-    context.lineWidth = segment.width;
-    context.beginPath();
-    context.moveTo(segment.points[0].x * canvas.width, segment.points[0].y * canvas.height);
-    for (const point of segment.points.slice(1)) {
-      context.lineTo(point.x * canvas.width, point.y * canvas.height);
-    }
-    context.stroke();
-  }
-  context.globalCompositeOperation = 'source-over';
-}
+import {
+  MAX_POINTS_PER_SEGMENT,
+  clampPoint,
+  generateStrokeId,
+  renderStrokesToContext,
+} from '../../utils/drawingEngine.js';
 
 export function DrawingCanvas({
-  roomCode,
-  lobbyStatus,
-  gameStatus,
-  currentRound,
-  currentTurn,
-  currentDrawerPlayerId,
-  isCurrentDrawer,
-  canDraw,
-  isSocketConnected,
+  strokes = [],
+  canDraw = false,
+  tool = 'pen',
+  color = '#0F172A',
+  brushSize = 6,
+  overlayMessage = null,
+  onStrokeSegment,
+  onEmitSegment,
 }) {
-  const { socket } = useSocket();
+  const containerRef = useRef(null);
   const canvasRef = useRef(null);
-  const activeStrokeRef = useRef(null);
-  const [segments, setSegments] = useState([]);
-  const [color, setColor] = useState(PALETTE[0]);
-  const [width, setWidth] = useState(5);
-  const [tool, setTool] = useState('pen');
-  const [error, setError] = useState(null);
+  const sizeRef = useRef({ width: 0, height: 0 });
+  const strokesRef = useRef(strokes);
+  strokesRef.current = strokes;
 
-  const applySegments = useCallback((update) => {
-    setSegments((previous) => {
-      const next = typeof update === 'function' ? update(previous) : update;
-      return next;
-    });
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+
+  // Active pointer stroke state
+  const activeStrokeRef = useRef(null);
+  const emitChainRef = useRef(Promise.resolve());
+  const rafRef = useRef(null);
+
+  const redraw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const { width, height } = sizeRef.current;
+    if (!canvas || width <= 0 || height <= 0) return;
+    const ctx = canvas.getContext('2d');
+    renderStrokesToContext(ctx, width, height, strokesRef.current);
   }, []);
 
+  // Keep canvas sized crisply to responsive container & DPR
   useEffect(() => {
-    drawSegments(canvasRef.current, segments);
-  }, [segments]);
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return undefined;
+
+    const updateDimensions = () => {
+      const rect = container.getBoundingClientRect();
+      const width = Math.max(1, Math.floor(rect.width));
+      const height = Math.max(1, Math.floor(rect.height));
+      const dpr = window.devicePixelRatio || 1;
+
+      sizeRef.current = { width, height };
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      setCanvasSize({ width, height });
+      renderStrokesToContext(ctx, width, height, strokesRef.current);
+    };
+
+    updateDimensions();
+
+    const observer = new ResizeObserver(updateDimensions);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  // Re-render whenever authoritative stroke state updates
+  useEffect(() => {
+    redraw();
+  }, [strokes, canvasSize, redraw]);
+
+  const flushSegments = useCallback(
+    (isFinal = false) => {
+      const active = activeStrokeRef.current;
+      if (!active) return;
+
+      const pts = active.pendingPoints;
+      if (pts.length === 0) return;
+
+      // Single tap/click: duplicate point to satisfy backend points.length >= 2
+      if (isFinal && pts.length === 1 && active.segmentIndex === 0) {
+        pts.push({ ...pts[0] });
+      }
+
+      if (pts.length < 2) {
+        if (isFinal) active.pendingPoints = [];
+        return;
+      }
+
+      while (pts.length >= 2) {
+        const chunk = pts.slice(0, MAX_POINTS_PER_SEGMENT);
+        const remaining = pts.slice(MAX_POINTS_PER_SEGMENT - 1);
+
+        const segment = {
+          strokeId: active.strokeId,
+          segmentIndex: active.segmentIndex,
+          points: chunk,
+          color: active.color,
+          width: active.width,
+          tool: active.tool,
+        };
+
+        active.segmentIndex += 1;
+        onStrokeSegment?.(segment);
+        emitChainRef.current = emitChainRef.current
+          .then(() => onEmitSegment?.(segment))
+          .catch(() => {});
+
+        if (remaining.length >= 2) {
+          pts.splice(0, pts.length, ...remaining);
+        } else {
+          // Keep the last anchor point for continuous next segment unless stroke ended
+          active.pendingPoints = isFinal ? [] : [chunk[chunk.length - 1]];
+          break;
+        }
+      }
+    },
+    [onStrokeSegment, onEmitSegment]
+  );
+
+  const scheduleFlush = useCallback(() => {
+    if (rafRef.current !== null) return;
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = null;
+      flushSegments(false);
+    });
+  }, [flushSegments]);
 
   useEffect(() => {
-    const matchesRoom = (payload) => payload?.roomCode === roomCode;
-    const onStroke = (payload) => {
-      if (matchesRoom(payload)) applySegments((previous) => [...previous, payload]);
-    };
-    const onUndo = (payload) => {
-      if (matchesRoom(payload)) {
-        applySegments((previous) => previous.filter((segment) => segment.strokeId !== payload.strokeId));
+    return () => {
+      if (rafRef.current !== null) {
+        window.cancelAnimationFrame(rafRef.current);
       }
     };
-    const onClear = (payload) => {
-      if (matchesRoom(payload)) applySegments([]);
-    };
-    const onTurn = (payload) => {
-      if (!payload?.roomCode || payload.roomCode === roomCode) applySegments([]);
-    };
-    const onComplete = (payload) => {
-      if (!payload?.roomCode || payload.roomCode === roomCode) applySegments([]);
-    };
+  }, []);
 
-    socket.on('drawing:stroke', onStroke);
-    socket.on('drawing:undone', onUndo);
-    socket.on('drawing:cleared', onClear);
-    socket.on('game_start', onTurn);
-    socket.on('game_turn', onTurn);
-    socket.on('game_complete', onComplete);
-    return () => {
-      socket.off('drawing:stroke', onStroke);
-      socket.off('drawing:undone', onUndo);
-      socket.off('drawing:cleared', onClear);
-      socket.off('game_start', onTurn);
-      socket.off('game_turn', onTurn);
-      socket.off('game_complete', onComplete);
-    };
-  }, [socket, roomCode, applySegments]);
-
-  useEffect(() => {
-    if (!isSocketConnected || lobbyStatus !== 'joined' || gameStatus !== 'started') return undefined;
-    let cancelled = false;
-    syncDrawingSocket()
-      .then((state) => {
-        if (!cancelled && state?.roomCode === roomCode && Array.isArray(state.strokes)) {
-          applySegments(state.strokes);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled && err?.code !== 'SOCKET_DISCONNECTED') {
-          setError({ message: err.message || 'Unable to sync the drawing canvas' });
-        }
-      });
-    return () => { cancelled = true; };
-  }, [isSocketConnected, lobbyStatus, gameStatus, roomCode, currentRound, currentTurn, currentDrawerPlayerId, applySegments]);
-
-  const pointFor = (event) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return {
-      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
-    };
-  };
-
-  const handlePointerDown = (event) => {
-    if (!canDraw || event.button !== 0) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    activeStrokeRef.current = {
-      strokeId: globalThis.crypto?.randomUUID?.() || `stroke_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-      segmentIndex: 0,
-      lastPoint: pointFor(event),
-    };
-  };
-
-  const handlePointerMove = (event) => {
-    const active = activeStrokeRef.current;
-    if (!active || !canDraw || (event.buttons & 1) !== 1) return;
-    const nextPoint = pointFor(event);
-    const segment = {
-      strokeId: active.strokeId,
-      segmentIndex: active.segmentIndex,
-      points: [active.lastPoint, nextPoint],
-      color,
-      width,
-      tool,
-    };
-    active.segmentIndex += 1;
-    active.lastPoint = nextPoint;
-    applySegments((previous) => [...previous, segment]);
-    sendDrawingStroke(segment).catch((err) => {
-      applySegments((previous) => previous.filter((item) => item.strokeId !== segment.strokeId));
-      activeStrokeRef.current = null;
-      setError({ message: err.message || 'The server rejected this stroke' });
+  const getNormalizedPoint = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return clampPoint({
+      x: (e.clientX - rect.left) / Math.max(1, rect.width),
+      y: (e.clientY - rect.top) / Math.max(1, rect.height),
     });
   };
 
-  const stopStroke = (event) => {
-    activeStrokeRef.current = null;
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
+  const handlePointerDown = (e) => {
+    if (!canDraw) return;
+    if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+
+    const startPoint = getNormalizedPoint(e);
+    activeStrokeRef.current = {
+      pointerId: e.pointerId,
+      strokeId: generateStrokeId(),
+      segmentIndex: 0,
+      color: tool === 'eraser' ? '#FFFFFF' : color.toUpperCase(),
+      width: Number(brushSize),
+      tool,
+      pendingPoints: [startPoint],
+    };
+  };
+
+  const handlePointerMove = (e) => {
+    const active = activeStrokeRef.current;
+    if (!canDraw || !active || active.pointerId !== e.pointerId) return;
+
+    e.preventDefault();
+    const nextPoint = getNormalizedPoint(e);
+    const last = active.pendingPoints[active.pendingPoints.length - 1];
+    if (last && last.x === nextPoint.x && last.y === nextPoint.y) return;
+
+    active.pendingPoints.push(nextPoint);
+    if (active.pendingPoints.length >= MAX_POINTS_PER_SEGMENT) {
+      flushSegments(false);
+    } else {
+      scheduleFlush();
     }
   };
 
-  const undo = async () => {
-    setError(null);
-    try {
-      const result = await undoDrawingSocket();
-      if (result.undone) {
-        applySegments((previous) => previous.filter((segment) => segment.strokeId !== result.strokeId));
+  const finishStroke = (e) => {
+    const active = activeStrokeRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+
+    if (rafRef.current !== null) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
+    if (e.type === 'pointerup' && canDraw) {
+      const endPoint = getNormalizedPoint(e);
+      const last = active.pendingPoints[active.pendingPoints.length - 1];
+      if (!last || last.x !== endPoint.x || last.y !== endPoint.y) {
+        active.pendingPoints.push(endPoint);
       }
-    } catch (err) {
-      setError({ message: err.message || 'Unable to undo the last stroke' });
     }
-  };
 
-  const clear = async () => {
-    setError(null);
+    flushSegments(true);
+    activeStrokeRef.current = null;
     try {
-      await clearDrawingSocket();
-      applySegments([]);
-    } catch (err) {
-      setError({ message: err.message || 'Unable to clear the canvas' });
+      e.currentTarget.releasePointerCapture?.(e.pointerId);
+    } catch {
+      // Ignore if pointer capture already released
     }
   };
 
   return (
-    <section className="space-y-3" aria-label="Shared drawing canvas">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-extrabold text-slate-900">Shared Canvas</h3>
-          <p className="text-xs text-slate-500">
-            {canDraw ? 'Your strokes appear live for everyone in this room.' : 'Watch the drawer sketch live.'}
-          </p>
-        </div>
-        {isCurrentDrawer && (
-          <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700">
-            Current drawer
-          </span>
-        )}
-      </div>
+    <div
+      ref={containerRef}
+      className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-inner"
+    >
+      <canvas
+        ref={canvasRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishStroke}
+        onPointerCancel={finishStroke}
+        className={`block h-full w-full touch-none select-none ${
+          canDraw ? 'cursor-crosshair' : 'cursor-default'
+        }`}
+      />
 
-      {canDraw && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-          <div className="flex items-center gap-1" aria-label="Brush color">
-            {PALETTE.map((swatch) => (
-              <button
-                key={swatch}
-                type="button"
-                aria-label={`Use color ${swatch}`}
-                aria-pressed={color === swatch}
-                onClick={() => { setColor(swatch); setTool('pen'); }}
-                className={`h-7 w-7 rounded-full border-2 ${color === swatch ? 'border-indigo-600 ring-2 ring-indigo-200' : 'border-white shadow'}`}
-                style={{ backgroundColor: swatch }}
-              />
-            ))}
-          </div>
-          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-            Size
-            <input aria-label="Brush size" type="range" min="2" max="24" value={width} onChange={(event) => setWidth(Number(event.target.value))} />
-          </label>
-          <Button variant={tool === 'eraser' ? 'primary' : 'outline'} size="sm" onClick={() => setTool(tool === 'eraser' ? 'pen' : 'eraser')}>
-            {tool === 'eraser' ? 'Eraser on' : 'Eraser'}
-          </Button>
-          <div className="ml-auto flex gap-2">
-            <Button variant="outline" size="sm" onClick={undo} disabled={!isSocketConnected}>Undo</Button>
-            <Button variant="secondary" size="sm" onClick={clear} disabled={!isSocketConnected}>Clear</Button>
+      {overlayMessage && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-900/10 backdrop-blur-[1px] p-4">
+          <div className="rounded-xl border-2 border-slate-200 bg-white/95 px-4 py-2.5 text-center text-xs font-bold text-slate-700 shadow-sm">
+            {overlayMessage}
           </div>
         </div>
       )}
-
-      <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-inner">
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_WIDTH}
-          height={CANVAS_HEIGHT}
-          aria-label={canDraw ? 'Drawing canvas. Use pointer or touch to draw.' : 'Read-only shared drawing canvas'}
-          className={`block aspect-video w-full touch-none ${canDraw ? 'cursor-crosshair' : 'cursor-default'}`}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={stopStroke}
-          onPointerCancel={stopStroke}
-        />
-      </div>
-      {gameStatus === 'started' && isCurrentDrawer && !canDraw && (
-        <p className="text-xs text-amber-800">Select a word before drawing.</p>
-      )}
-      {!isSocketConnected && <p className="text-xs font-medium text-amber-700">Reconnect to synchronize canvas actions.</p>}
-      {error && <p role="alert" className="text-xs font-semibold text-rose-700">{error.message}</p>}
-    </section>
+    </div>
   );
 }
