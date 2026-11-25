@@ -6,9 +6,14 @@ import {
   joinRoom as joinRoomApi,
 } from '../services/roomService.js';
 import {
+  banPlayerSocket,
+  castVoteKickSocket,
   joinLobbySocket,
+  kickPlayerSocket,
   leaveLobbySocket,
+  sendAnnouncementSocket,
   sendChatMessageSocket,
+  startVoteKickSocket,
 } from '../services/socket.js';
 import {
   clearStoredRoomSession,
@@ -57,6 +62,17 @@ export function RoomProvider({ children }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [chatError, setChatError] = useState(null);
+  const [announcements, setAnnouncements] = useState([]);
+  const [latestAnnouncement, setLatestAnnouncement] = useState(null);
+  const [activeVoteKick, setActiveVoteKick] = useState(null);
+  const [lastVoteKickResult, setLastVoteKickResult] = useState(null);
+  const [removedState, setRemovedState] = useState(null);
+  const [moderationBusy, setModerationBusy] = useState(false);
+  const [moderationError, setModerationError] = useState(null);
+  const [voteKickBusy, setVoteKickBusy] = useState(false);
+  const [voteKickError, setVoteKickError] = useState(null);
+  const [announcementBusy, setAnnouncementBusy] = useState(false);
+  const [announcementError, setAnnouncementError] = useState(null);
   const [error, setError] = useState(null);
 
   const activeLobbyRef = useRef({ roomCode: null, inviteToken: null });
@@ -113,6 +129,14 @@ export function RoomProvider({ children }) {
       setActivityLog([]);
       setChatMessages([]);
       setChatError(null);
+      setAnnouncements([]);
+      setLatestAnnouncement(null);
+      setActiveVoteKick(null);
+      setLastVoteKickResult(null);
+      setRemovedState(null);
+      setModerationError(null);
+      setVoteKickError(null);
+      setAnnouncementError(null);
       return created;
     },
     [playerId, identityToken, persistRoom, socket]
@@ -145,6 +169,14 @@ export function RoomProvider({ children }) {
       setActivityLog([]);
       setChatMessages([]);
       setChatError(null);
+      setAnnouncements([]);
+      setLatestAnnouncement(null);
+      setActiveVoteKick(null);
+      setLastVoteKickResult(null);
+      setRemovedState(null);
+      setModerationError(null);
+      setVoteKickError(null);
+      setAnnouncementError(null);
       return joined;
     },
     [playerId, identityToken, persistRoom, socket]
@@ -214,6 +246,14 @@ export function RoomProvider({ children }) {
         setActivityLog([]);
         setChatMessages([]);
         setChatError(null);
+        setAnnouncements([]);
+        setLatestAnnouncement(null);
+        setActiveVoteKick(null);
+        setLastVoteKickResult(null);
+        setRemovedState(null);
+        setModerationError(null);
+        setVoteKickError(null);
+        setAnnouncementError(null);
         setError(null);
       }
     },
@@ -230,6 +270,14 @@ export function RoomProvider({ children }) {
     setActivityLog([]);
     setChatMessages([]);
     setChatError(null);
+    setAnnouncements([]);
+    setLatestAnnouncement(null);
+    setActiveVoteKick(null);
+    setLastVoteKickResult(null);
+    setRemovedState(null);
+    setModerationError(null);
+    setVoteKickError(null);
+    setAnnouncementError(null);
     setError(null);
   }, []);
 
@@ -253,6 +301,102 @@ export function RoomProvider({ children }) {
   const clearChatError = useCallback(() => {
     setChatError(null);
   }, []);
+
+  const kickPlayer = useCallback(async (targetPlayerId) => {
+    setModerationBusy(true);
+    setModerationError(null);
+    try {
+      return await kickPlayerSocket(targetPlayerId);
+    } catch (err) {
+      const normalized = {
+        code: err?.code || 'KICK_FAILED',
+        message: err?.message || 'Unable to kick player',
+      };
+      setModerationError(normalized);
+      throw normalized;
+    } finally {
+      setModerationBusy(false);
+    }
+  }, []);
+
+  const banPlayer = useCallback(async (targetPlayerId) => {
+    setModerationBusy(true);
+    setModerationError(null);
+    try {
+      return await banPlayerSocket(targetPlayerId);
+    } catch (err) {
+      const normalized = {
+        code: err?.code || 'BAN_FAILED',
+        message: err?.message || 'Unable to ban player',
+      };
+      setModerationError(normalized);
+      throw normalized;
+    } finally {
+      setModerationBusy(false);
+    }
+  }, []);
+
+  const startVoteKick = useCallback(async (targetPlayerId) => {
+    setVoteKickBusy(true);
+    setVoteKickError(null);
+    try {
+      return await startVoteKickSocket(targetPlayerId);
+    } catch (err) {
+      const normalized = {
+        code: err?.code || 'VOTE_KICK_FAILED',
+        message: err?.message || 'Unable to start vote kick',
+      };
+      setVoteKickError(normalized);
+      throw normalized;
+    } finally {
+      setVoteKickBusy(false);
+    }
+  }, []);
+
+  const castVoteKick = useCallback(async (yes) => {
+    setVoteKickBusy(true);
+    setVoteKickError(null);
+    try {
+      const result = await castVoteKickSocket(yes);
+      setActiveVoteKick((prev) =>
+        prev ? { ...prev, hasVoted: true, myVote: Boolean(yes) } : prev
+      );
+      return result;
+    } catch (err) {
+      const normalized = {
+        code: err?.code || 'VOTE_CAST_FAILED',
+        message: err?.message || 'Unable to submit vote',
+      };
+      setVoteKickError(normalized);
+      throw normalized;
+    } finally {
+      setVoteKickBusy(false);
+    }
+  }, []);
+
+  const sendAnnouncement = useCallback(async (message) => {
+    setAnnouncementBusy(true);
+    setAnnouncementError(null);
+    try {
+      return await sendAnnouncementSocket(message);
+    } catch (err) {
+      const normalized = {
+        code: err?.code || 'ANNOUNCEMENT_FAILED',
+        message: err?.message || 'Unable to broadcast announcement',
+      };
+      setAnnouncementError(normalized);
+      throw normalized;
+    } finally {
+      setAnnouncementBusy(false);
+    }
+  }, []);
+
+  const dismissAnnouncement = useCallback(() => setLatestAnnouncement(null), []);
+  const dismissVoteKickResult = useCallback(() => setLastVoteKickResult(null), []);
+  const clearModerationError = useCallback(() => setModerationError(null), []);
+  const clearVoteKickError = useCallback(() => setVoteKickError(null), []);
+  const clearAnnouncementError = useCallback(() => setAnnouncementError(null), []);
+  const clearRemovedState = useCallback(() => setRemovedState(null), []);
 
   const clearError = useCallback(() => {
     setError(null);
@@ -309,16 +453,135 @@ export function RoomProvider({ children }) {
       ].slice(-100));
     };
 
+    const handleAnnouncement = (event) => {
+      if (!event?.message) return;
+      const entry = {
+        id: `${event.sentAt || Date.now()}-${event.playerId || 'host'}-${Math.random().toString(36).slice(2, 6)}`,
+        ...event,
+      };
+      setLatestAnnouncement(entry);
+      setAnnouncements((prev) => [entry, ...prev].slice(0, 15));
+      appendActivity('announcement', `Announcement from ${event.displayName || 'Host'}: ${event.message}`);
+    };
+
+    const handlePlayerKicked = (event) => {
+      if (Array.isArray(event?.players)) {
+        setPlayers(deduplicatePlayers(event.players));
+      }
+      if (event?.player?.displayName) {
+        const label = event.source === 'vote_kick' ? 'via VoteKick' : 'by the host';
+        appendActivity('leave', `${event.player.displayName} was removed ${label}`);
+      }
+      if (event?.hostTransferredTo?.displayName) {
+        appendActivity(
+          'host',
+          `Host role transferred to ${event.hostTransferredTo.displayName}`
+        );
+      }
+    };
+
+    const handlePlayerBanned = (event) => {
+      if (Array.isArray(event?.players)) {
+        setPlayers(deduplicatePlayers(event.players));
+      }
+      if (event?.player?.displayName) {
+        appendActivity('leave', `${event.player.displayName} was banned by the host`);
+      }
+      if (event?.hostTransferredTo?.displayName) {
+        appendActivity(
+          'host',
+          `Host role transferred to ${event.hostTransferredTo.displayName}`
+        );
+      }
+    };
+
+    const handleModerationRemoved = (event) => {
+      activeLobbyRef.current = { roomCode: null, inviteToken: null };
+      clearStoredRoomSession();
+      setRoom(null);
+      setPlayers([]);
+      setLobbyStatus('idle');
+      setActiveVoteKick(null);
+      setRemovedState({
+        roomCode: event?.roomCode || null,
+        banned: Boolean(event?.banned),
+        reason: event?.reason || (event?.banned ? 'banned_by_host' : 'kicked_by_host'),
+      });
+    };
+
+    const handleVoteKickStarted = (event) => {
+      if (!event?.targetPlayerId) return;
+      setLastVoteKickResult(null);
+      setVoteKickError(null);
+      setActiveVoteKick({
+        ...event,
+        yesVotes: 0,
+        noVotes: 0,
+        votesCast: 0,
+        hasVoted: false,
+        myVote: null,
+      });
+      appendActivity(
+        'votekick',
+        `VoteKick started against ${event.targetDisplayName || 'a player'}`
+      );
+    };
+
+    const handleVoteKickUpdated = (event) => {
+      if (!event?.targetPlayerId) return;
+      setActiveVoteKick((prev) => {
+        if (!prev || prev.targetPlayerId !== event.targetPlayerId) return prev;
+        return {
+          ...prev,
+          yesVotes: event.yesVotes ?? prev.yesVotes,
+          noVotes: event.noVotes ?? prev.noVotes,
+          votesCast: event.votesCast ?? prev.votesCast,
+          requiredVotes: event.requiredVotes ?? prev.requiredVotes,
+        };
+      });
+    };
+
+    const handleVoteKickEnded = (event) => {
+      if (!event?.targetPlayerId) return;
+      setActiveVoteKick((prev) => {
+        const targetDisplayName = prev?.targetDisplayName || 'player';
+        setLastVoteKickResult({
+          ...event,
+          targetDisplayName,
+          resolvedAt: new Date().toISOString(),
+        });
+        appendActivity(
+          'votekick',
+          `VoteKick for ${targetDisplayName} ${event.passed ? 'passed' : 'failed'}`
+        );
+        return null;
+      });
+    };
+
     socket.on('player_joined', handlePlayerJoined);
     socket.on('player_left', handlePlayerLeft);
     socket.on('lobby_error', handleLobbyError);
     socket.on('chat:message', handleChatMessage);
+    socket.on('room:announcement', handleAnnouncement);
+    socket.on('player_kicked', handlePlayerKicked);
+    socket.on('player_banned', handlePlayerBanned);
+    socket.on('moderation:removed', handleModerationRemoved);
+    socket.on('vote_kick:started', handleVoteKickStarted);
+    socket.on('vote_kick:updated', handleVoteKickUpdated);
+    socket.on('vote_kick:ended', handleVoteKickEnded);
 
     return () => {
       socket.off('player_joined', handlePlayerJoined);
       socket.off('player_left', handlePlayerLeft);
       socket.off('lobby_error', handleLobbyError);
       socket.off('chat:message', handleChatMessage);
+      socket.off('room:announcement', handleAnnouncement);
+      socket.off('player_kicked', handlePlayerKicked);
+      socket.off('player_banned', handlePlayerBanned);
+      socket.off('moderation:removed', handleModerationRemoved);
+      socket.off('vote_kick:started', handleVoteKickStarted);
+      socket.off('vote_kick:updated', handleVoteKickUpdated);
+      socket.off('vote_kick:ended', handleVoteKickEnded);
     };
   }, [socket, appendActivity]);
 
@@ -369,6 +632,17 @@ export function RoomProvider({ children }) {
       chatMessages,
       isSendingChat,
       chatError,
+      announcements,
+      latestAnnouncement,
+      activeVoteKick,
+      lastVoteKickResult,
+      removedState,
+      moderationBusy,
+      moderationError,
+      voteKickBusy,
+      voteKickError,
+      announcementBusy,
+      announcementError,
       error,
       createRoom,
       joinRoom,
@@ -376,6 +650,17 @@ export function RoomProvider({ children }) {
       leaveLobby,
       sendChatMessage,
       clearChatError,
+      kickPlayer,
+      banPlayer,
+      startVoteKick,
+      castVoteKick,
+      sendAnnouncement,
+      dismissAnnouncement,
+      dismissVoteKickResult,
+      clearModerationError,
+      clearVoteKickError,
+      clearAnnouncementError,
+      clearRemovedState,
       syncPlayers,
       clearRoomState,
       clearError,
@@ -394,6 +679,17 @@ export function RoomProvider({ children }) {
       chatMessages,
       isSendingChat,
       chatError,
+      announcements,
+      latestAnnouncement,
+      activeVoteKick,
+      lastVoteKickResult,
+      removedState,
+      moderationBusy,
+      moderationError,
+      voteKickBusy,
+      voteKickError,
+      announcementBusy,
+      announcementError,
       error,
       createRoom,
       joinRoom,
@@ -401,6 +697,17 @@ export function RoomProvider({ children }) {
       leaveLobby,
       sendChatMessage,
       clearChatError,
+      kickPlayer,
+      banPlayer,
+      startVoteKick,
+      castVoteKick,
+      sendAnnouncement,
+      dismissAnnouncement,
+      dismissVoteKickResult,
+      clearModerationError,
+      clearVoteKickError,
+      clearAnnouncementError,
+      clearRemovedState,
       syncPlayers,
       clearRoomState,
       clearError,

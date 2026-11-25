@@ -11,6 +11,10 @@ import { WordBlanksDisplay } from '../components/game/WordBlanksDisplay.jsx';
 import { WordSelectionCard } from '../components/game/WordSelectionCard.jsx';
 import { LobbyConnectionBanner } from '../components/lobby/LobbyConnectionBanner.jsx';
 import { PlayerIdentityCard } from '../components/player/PlayerIdentityCard.jsx';
+import { AnnouncementBanner } from '../components/room/AnnouncementBanner.jsx';
+import { ModerationPanel } from '../components/room/ModerationPanel.jsx';
+import { RemovedFromRoomCard } from '../components/room/RemovedFromRoomCard.jsx';
+import { VoteKickPanel } from '../components/room/VoteKickPanel.jsx';
 import { Badge, Button, Card } from '../components/ui/index.js';
 import { useGame } from '../hooks/useGame.js';
 import { useLobby } from '../hooks/useLobby.js';
@@ -24,7 +28,35 @@ export function GamePage() {
 
   const inviteTokenParam = (searchParams.get('inviteToken') || '').trim();
   const { playerId, hasIdentity, isRestoring } = usePlayer();
-  const { chatMessages, isSendingChat, chatError, sendChatMessage, clearChatError } = useRoom();
+  const {
+    chatMessages,
+    isSendingChat,
+    chatError,
+    sendChatMessage,
+    clearChatError,
+    announcements,
+    latestAnnouncement,
+    activeVoteKick,
+    lastVoteKickResult,
+    removedState,
+    moderationBusy,
+    moderationError,
+    voteKickBusy,
+    voteKickError,
+    announcementBusy,
+    announcementError,
+    kickPlayer,
+    banPlayer,
+    startVoteKick,
+    castVoteKick,
+    sendAnnouncement,
+    dismissAnnouncement,
+    dismissVoteKickResult,
+    clearModerationError,
+    clearVoteKickError,
+    clearAnnouncementError,
+    clearRemovedState,
+  } = useRoom();
 
   const {
     room,
@@ -140,7 +172,17 @@ export function GamePage() {
         onRetryJoin={retryJoinLobby}
       />
 
-      {isRestoring ? (
+      <AnnouncementBanner
+        announcement={latestAnnouncement}
+        onDismiss={dismissAnnouncement}
+      />
+
+      {removedState ? (
+        <RemovedFromRoomCard
+          removedState={removedState}
+          onAcknowledge={clearRemovedState}
+        />
+      ) : isRestoring ? (
         <Card variant="elevated">
           <p className="text-sm text-slate-600">Restoring your guest identity...</p>
         </Card>
@@ -282,6 +324,39 @@ export function GamePage() {
                 error={chatError}
                 onSendMessage={sendChatMessage}
                 onClearError={clearChatError}
+              />
+
+              <ModerationPanel
+                isHost={isHost}
+                players={players}
+                currentPlayerId={playerId}
+                isSocketConnected={isSocketConnected && lobbyStatus === 'joined'}
+                moderationBusy={moderationBusy}
+                moderationError={moderationError}
+                announcementBusy={announcementBusy}
+                announcementError={announcementError}
+                announcements={announcements}
+                onKickPlayer={kickPlayer}
+                onBanPlayer={banPlayer}
+                onSendAnnouncement={sendAnnouncement}
+                onClearModerationError={clearModerationError}
+                onClearAnnouncementError={clearAnnouncementError}
+              />
+
+              <VoteKickPanel
+                players={players}
+                currentPlayerId={playerId}
+                voteKickEnabled={room?.settings?.voteKickEnabled ?? true}
+                voteKickThreshold={room?.settings?.voteKickThreshold ?? 60}
+                isSocketConnected={isSocketConnected && lobbyStatus === 'joined'}
+                activeVoteKick={activeVoteKick}
+                lastVoteKickResult={lastVoteKickResult}
+                voteKickBusy={voteKickBusy}
+                voteKickError={voteKickError}
+                onStartVoteKick={startVoteKick}
+                onCastVoteKick={castVoteKick}
+                onDismissResult={dismissVoteKickResult}
+                onClearError={clearVoteKickError}
               />
             </div>
           </div>

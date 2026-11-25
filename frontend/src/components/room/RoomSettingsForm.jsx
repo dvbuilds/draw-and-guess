@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLanguage } from '../../hooks/useLanguage.js';
+import { getAvailableCategories, getAvailableLanguages } from '../../services/wordService.js';
 import { Button, Input, Select } from '../ui/index.js';
 import {
   DEFAULT_ROOM_SETTINGS,
   ROOM_LIMITS,
+  WORD_CATEGORIES,
+  WORD_LANGUAGES,
   WORD_MODES,
   validateRoomSettingsInput,
 } from '../../utils/roomValidation.js';
@@ -33,7 +37,10 @@ export function RoomSettingsForm({
   serverError = null,
   onClearServerError,
 }) {
+  const { language: uiLanguage } = useLanguage();
   const [isPublic, setIsPublic] = useState(true);
+  const [availableLanguages, setAvailableLanguages] = useState(WORD_LANGUAGES);
+  const [availableCategories, setAvailableCategories] = useState(WORD_CATEGORIES);
   const [formValues, setFormValues] = useState({
     maxPlayers: String(DEFAULT_ROOM_SETTINGS.maxPlayers),
     rounds: String(DEFAULT_ROOM_SETTINGS.rounds),
@@ -41,14 +48,84 @@ export function RoomSettingsForm({
     wordChoices: String(DEFAULT_ROOM_SETTINGS.wordChoices),
     hints: String(DEFAULT_ROOM_SETTINGS.hints),
     wordMode: DEFAULT_ROOM_SETTINGS.wordMode,
+    language: uiLanguage || DEFAULT_ROOM_SETTINGS.language,
+    wordCategories: DEFAULT_ROOM_SETTINGS.wordCategories,
+    voteKickEnabled: DEFAULT_ROOM_SETTINGS.voteKickEnabled,
+    voteKickThreshold: String(DEFAULT_ROOM_SETTINGS.voteKickThreshold),
   });
   const [fieldErrors, setFieldErrors] = useState({});
 
+  useEffect(() => {
+    let active = true;
+    getAvailableLanguages()
+      .then((langs) => {
+        if (active && Array.isArray(langs) && langs.length > 0) {
+          setAvailableLanguages(langs);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getAvailableCategories(formValues.language)
+      .then((cats) => {
+        if (active && Array.isArray(cats) && cats.length > 0) {
+          setAvailableCategories(cats);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [formValues.language]);
+
+  const selectableCategories = useMemo(() => {
+    if (formValues.wordMode === 'Combination') {
+      return availableCategories.filter((cat) => cat === 'Combination');
+    }
+    return availableCategories.filter((cat) => cat !== 'Combination');
+  }, [availableCategories, formValues.wordMode]);
+
+  const languageOptions = useMemo(
+    () => availableLanguages.map((lang) => ({ value: lang.code, label: lang.name })),
+    [availableLanguages]
+  );
+
   const updateField = (field, value) => {
-    setFormValues((prev) => ({ ...prev, [field]: value }));
+    setFormValues((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'wordMode') {
+        if (value === 'Combination') {
+          next.wordCategories = prev.wordCategories.filter((c) => c === 'Combination');
+        } else {
+          next.wordCategories = prev.wordCategories.filter((c) => c !== 'Combination');
+        }
+      }
+      return next;
+    });
     if (serverError) onClearServerError?.();
-    if (fieldErrors[field]) {
-      setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
+    if (fieldErrors[field] || fieldErrors.wordCategories) {
+      setFieldErrors((prev) => ({ ...prev, [field]: undefined, wordCategories: undefined }));
+    }
+  };
+
+  const toggleCategory = (category) => {
+    setFormValues((prev) => {
+      const exists = prev.wordCategories.includes(category);
+      return {
+        ...prev,
+        wordCategories: exists
+          ? prev.wordCategories.filter((item) => item !== category)
+          : [...prev.wordCategories, category],
+      };
+    });
+    if (serverError) onClearServerError?.();
+    if (fieldErrors.wordCategories) {
+      setFieldErrors((prev) => ({ ...prev, wordCategories: undefined }));
     }
   };
 
@@ -62,6 +139,11 @@ export function RoomSettingsForm({
       wordChoices: formValues.wordChoices === '' ? NaN : Number(formValues.wordChoices),
       hints: formValues.hints === 'disabled' ? 'disabled' : Number(formValues.hints),
       wordMode: formValues.wordMode,
+      language: formValues.language,
+      wordCategories: formValues.wordCategories,
+      voteKickEnabled: Boolean(formValues.voteKickEnabled),
+      voteKickThreshold:
+        formValues.voteKickThreshold === '' ? NaN : Number(formValues.voteKickThreshold),
     };
 
     const validation = validateRoomSettingsInput(parsedInput);
@@ -213,6 +295,97 @@ export function RoomSettingsForm({
           options={WORD_MODE_OPTIONS}
           error={fieldErrors.wordMode}
           hint="Controls how words are presented during rounds."
+        />
+
+        <Select
+          id="room-word-language"
+          name="language"
+          label="Word Language"
+          value={formValues.language}
+          onChange={(e) => updateField('language', e.target.value)}
+          options={languageOptions}
+          error={fieldErrors.language}
+          hint="Language used for generated drawing words."
+        />
+      </div>
+
+      {/* Word Category Selection */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="block text-sm font-bold text-slate-800">Word Categories</span>
+          {formValues.wordCategories.length > 0 && (
+            <button
+              type="button"
+              onClick={() => updateField('wordCategories', [])}
+              className="cursor-pointer text-xs font-bold text-indigo-600 hover:text-indigo-700"
+            >
+              Reset to all categories
+            </button>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {selectableCategories.map((category) => {
+            const selected = formValues.wordCategories.includes(category);
+            return (
+              <button
+                key={category}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => toggleCategory(category)}
+                className={`cursor-pointer rounded-xl border-2 px-3 py-1.5 text-xs font-bold transition-all ${
+                  selected
+                    ? 'border-indigo-600 bg-indigo-600 text-white shadow-[0_2px_0_0_#3730a3]'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                {category}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500">
+          {formValues.wordCategories.length === 0
+            ? formValues.wordMode === 'Combination'
+              ? 'Defaulting to Combination prompts.'
+              : 'Leave unselected to include words from all standard categories.'
+            : `Selected: ${formValues.wordCategories.join(', ')}`}
+        </p>
+        {fieldErrors.wordCategories && (
+          <p role="alert" className="text-xs font-semibold text-rose-600">
+            {fieldErrors.wordCategories}
+          </p>
+        )}
+      </div>
+
+      {/* VoteKick Moderation Settings */}
+      <div className="grid gap-4 rounded-xl border-2 border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-2 sm:items-center">
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={formValues.voteKickEnabled}
+            onChange={(e) => updateField('voteKickEnabled', e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <div>
+            <span className="block text-sm font-bold text-slate-800">Enable VoteKick</span>
+            <span className="block text-xs text-slate-500">
+              Let players vote to remove disruptive members.
+            </span>
+          </div>
+        </label>
+
+        <Input
+          id="room-votekick-threshold"
+          name="voteKickThreshold"
+          type="number"
+          min={ROOM_LIMITS.voteKickThreshold.min}
+          max={ROOM_LIMITS.voteKickThreshold.max}
+          label="VoteKick Threshold (%)"
+          disabled={!formValues.voteKickEnabled}
+          value={formValues.voteKickThreshold}
+          onChange={(e) => updateField('voteKickThreshold', e.target.value)}
+          error={fieldErrors.voteKickThreshold}
+          hint={`${ROOM_LIMITS.voteKickThreshold.min}%–${ROOM_LIMITS.voteKickThreshold.max}% Yes votes required`}
         />
       </div>
 

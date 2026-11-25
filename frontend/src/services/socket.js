@@ -93,6 +93,26 @@ export function sendChatMessageSocket(message) {
   return emitWithAck('chat:send', { message });
 }
 
+export function kickPlayerSocket(playerId) {
+  return emitWithAck('moderation:kick', { playerId });
+}
+
+export function banPlayerSocket(playerId) {
+  return emitWithAck('moderation:ban', { playerId });
+}
+
+export function startVoteKickSocket(playerId) {
+  return emitWithAck('vote_kick:start', { playerId });
+}
+
+export function castVoteKickSocket(yes) {
+  return emitWithAck('vote_kick:cast', { yes });
+}
+
+export function sendAnnouncementSocket(message) {
+  return emitWithAck('announcement:send', { message });
+}
+
 export function sendDrawingStrokeSocket(segment) {
   return emitWithAck('drawing:stroke', segment);
 }

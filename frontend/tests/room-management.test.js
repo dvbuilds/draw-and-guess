@@ -180,6 +180,10 @@ test('creates public and private rooms with every setting and invite link format
     wordChoices: 4,
     hints: 2,
     wordMode: 'Normal',
+    language: 'en',
+    wordCategories: [],
+    voteKickEnabled: true,
+    voteKickThreshold: 60,
     scoring: {
       correctGuessPoints: 100,
       drawerPointsPerCorrectGuess: 50,

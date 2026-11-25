@@ -6,7 +6,11 @@ import { LobbyConnectionBanner } from '../components/lobby/LobbyConnectionBanner
 import { LobbyHostControls } from '../components/lobby/LobbyHostControls.jsx';
 import { LobbyPlayerList } from '../components/lobby/LobbyPlayerList.jsx';
 import { PlayerIdentityCard } from '../components/player/PlayerIdentityCard.jsx';
+import { AnnouncementBanner } from '../components/room/AnnouncementBanner.jsx';
 import { InviteShareCard } from '../components/room/InviteShareCard.jsx';
+import { ModerationPanel } from '../components/room/ModerationPanel.jsx';
+import { RemovedFromRoomCard } from '../components/room/RemovedFromRoomCard.jsx';
+import { VoteKickPanel } from '../components/room/VoteKickPanel.jsx';
 import { Badge, Button, Card } from '../components/ui/index.js';
 import { useLobby } from '../hooks/useLobby.js';
 import { usePlayer } from '../hooks/usePlayer.js';
@@ -19,7 +23,35 @@ export function LobbyPage() {
 
   const inviteTokenParam = (searchParams.get('inviteToken') || '').trim();
   const { playerId, hasIdentity, isRestoring } = usePlayer();
-  const { chatMessages, isSendingChat, chatError, sendChatMessage, clearChatError } = useRoom();
+  const {
+    chatMessages,
+    isSendingChat,
+    chatError,
+    sendChatMessage,
+    clearChatError,
+    announcements,
+    latestAnnouncement,
+    activeVoteKick,
+    lastVoteKickResult,
+    removedState,
+    moderationBusy,
+    moderationError,
+    voteKickBusy,
+    voteKickError,
+    announcementBusy,
+    announcementError,
+    kickPlayer,
+    banPlayer,
+    startVoteKick,
+    castVoteKick,
+    sendAnnouncement,
+    dismissAnnouncement,
+    dismissVoteKickResult,
+    clearModerationError,
+    clearVoteKickError,
+    clearAnnouncementError,
+    clearRemovedState,
+  } = useRoom();
 
   const {
     room,
@@ -147,7 +179,17 @@ export function LobbyPage() {
         onRetryJoin={retryJoinLobby}
       />
 
-      {isRestoring ? (
+      <AnnouncementBanner
+        announcement={latestAnnouncement}
+        onDismiss={dismissAnnouncement}
+      />
+
+      {removedState ? (
+        <RemovedFromRoomCard
+          removedState={removedState}
+          onAcknowledge={clearRemovedState}
+        />
+      ) : isRestoring ? (
         <Card variant="elevated">
           <p className="text-sm text-slate-600">Restoring your guest identity...</p>
         </Card>
@@ -226,6 +268,39 @@ export function LobbyPage() {
               inviteToken={effectiveInviteToken}
             />
 
+            <ModerationPanel
+              isHost={isHost}
+              players={players}
+              currentPlayerId={playerId}
+              isSocketConnected={isSocketConnected && lobbyStatus === 'joined'}
+              moderationBusy={moderationBusy}
+              moderationError={moderationError}
+              announcementBusy={announcementBusy}
+              announcementError={announcementError}
+              announcements={announcements}
+              onKickPlayer={kickPlayer}
+              onBanPlayer={banPlayer}
+              onSendAnnouncement={sendAnnouncement}
+              onClearModerationError={clearModerationError}
+              onClearAnnouncementError={clearAnnouncementError}
+            />
+
+            <VoteKickPanel
+              players={players}
+              currentPlayerId={playerId}
+              voteKickEnabled={room?.settings?.voteKickEnabled ?? true}
+              voteKickThreshold={room?.settings?.voteKickThreshold ?? 60}
+              isSocketConnected={isSocketConnected && lobbyStatus === 'joined'}
+              activeVoteKick={activeVoteKick}
+              lastVoteKickResult={lastVoteKickResult}
+              voteKickBusy={voteKickBusy}
+              voteKickError={voteKickError}
+              onStartVoteKick={startVoteKick}
+              onCastVoteKick={castVoteKick}
+              onDismissResult={dismissVoteKickResult}
+              onClearError={clearVoteKickError}
+            />
+
             {room?.settings && (
               <Card className="space-y-3">
                 <h2 className="text-sm font-extrabold text-slate-900">Room Settings</h2>
@@ -255,6 +330,20 @@ export function LobbyPage() {
                   <div>
                     <dt className="text-slate-400">Word Mode</dt>
                     <dd className="font-bold text-slate-800">{room.settings.wordMode}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-400">Word Language</dt>
+                    <dd className="font-bold uppercase text-slate-800">
+                      {room.settings.language || 'en'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-400">Categories</dt>
+                    <dd className="font-bold text-slate-800">
+                      {room.settings.wordCategories?.length > 0
+                        ? room.settings.wordCategories.join(', ')
+                        : 'All'}
+                    </dd>
                   </div>
                 </dl>
               </Card>

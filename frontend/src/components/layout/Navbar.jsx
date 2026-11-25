@@ -1,5 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 import { useGame } from '../../hooks/useGame.js';
+import { useLanguage } from '../../hooks/useLanguage.js';
 import { usePlayer } from '../../hooks/usePlayer.js';
 import { useRoom } from '../../hooks/useRoom.js';
 import { useSocket } from '../../hooks/useSocket.js';
@@ -25,6 +26,7 @@ export function Navbar() {
   const { displayName, hasIdentity } = usePlayer();
   const { roomCode } = useRoom();
   const { status: gameStatus } = useGame();
+  const { language, setLanguage, languages, t } = useLanguage();
 
   return (
     <header className="sticky top-0 z-30 border-b-2 border-slate-200 bg-white/90 backdrop-blur-md">
@@ -42,20 +44,20 @@ export function Navbar() {
                 Draw &amp; Guess
               </span>
               <span className="hidden text-[11px] font-medium text-slate-500 sm:block">
-                Real-time Multiplayer Sketch Party
+                {t.appTagline}
               </span>
             </div>
           </Link>
 
           <nav aria-label="Primary" className="flex items-center gap-1">
             <NavLink to="/" end className={navLinkClass}>
-              Home
+              {t.navHome}
             </NavLink>
             <NavLink to="/create" className={navLinkClass}>
-              Create Room
+              {t.navCreate}
             </NavLink>
             <NavLink to="/join" className={navLinkClass}>
-              Join Room
+              {t.navJoin}
             </NavLink>
             {roomCode && (
               <NavLink
@@ -78,12 +80,32 @@ export function Navbar() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {hasIdentity && displayName && (
             <Badge variant="emerald" className="hidden md:inline-flex max-w-36 truncate">
               Player: {displayName}
             </Badge>
           )}
+
+          <label className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700">
+            <span className="sr-only">{t.languageLabel}</span>
+            <span aria-hidden="true" className="text-[11px] text-slate-500">
+              🌐
+            </span>
+            <select
+              aria-label={t.languageLabel}
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              className="cursor-pointer bg-transparent text-xs font-bold text-slate-800 focus:outline-none"
+            >
+              {languages.map((lang) => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
             <StatusIndicator
               state={status}

@@ -126,6 +126,26 @@ export function RoomCreatedSummary({ room, onCreateAnother }) {
             <dt className="text-slate-400">Word Mode</dt>
             <dd className="font-bold text-slate-800">{settings.wordMode}</dd>
           </div>
+          <div>
+            <dt className="text-slate-400">Word Language</dt>
+            <dd className="font-bold uppercase text-slate-800">{settings.language || 'en'}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-400">Categories</dt>
+            <dd className="font-bold text-slate-800">
+              {settings.wordCategories?.length > 0
+                ? settings.wordCategories.join(', ')
+                : 'All standard categories'}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-slate-400">VoteKick</dt>
+            <dd className="font-bold text-slate-800">
+              {settings.voteKickEnabled === false
+                ? 'Disabled'
+                : `Enabled (${settings.voteKickThreshold ?? 60}%)`}
+            </dd>
+          </div>
         </dl>
       </div>
 

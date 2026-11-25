@@ -43,6 +43,16 @@ function formatJoinError(err) {
         message:
           'Another player in this room already uses your display name. Switch your guest name to join.',
       };
+    case 'PLAYER_BANNED':
+      return {
+        code,
+        message: 'You were banned from this room by the host and cannot rejoin.',
+      };
+    case 'PLAYER_KICKED':
+      return {
+        code,
+        message: 'You were removed from this match while it is in progress.',
+      };
     case 'INVALID_PLAYER_IDENTITY':
       return {
         code,

@@ -258,6 +258,7 @@ test('synchronizes game start, drawer display, round/turn transitions, reconnect
     currentTurn: 1,
     totalRounds: 2,
     currentDrawerPlayerId: players[0].id,
+    language: 'en',
   });
 
   // Final turn in Round 2 -> host advances -> game_complete
