@@ -3,6 +3,7 @@ import { MainLayout } from '../components/layout/MainLayout.jsx';
 import { CreateRoomPage } from '../pages/CreateRoomPage.jsx';
 import { HomePage } from '../pages/HomePage.jsx';
 import { JoinRoomPage } from '../pages/JoinRoomPage.jsx';
+import { LobbyPage } from '../pages/LobbyPage.jsx';
 import { NotFoundPage } from '../pages/NotFoundPage.jsx';
 
 export function AppRouter() {
@@ -13,6 +14,7 @@ export function AppRouter() {
           <Route path="/" element={<HomePage />} />
           <Route path="/create" element={<CreateRoomPage />} />
           <Route path="/join" element={<JoinRoomPage />} />
+          <Route path="/lobby/:roomCode" element={<LobbyPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

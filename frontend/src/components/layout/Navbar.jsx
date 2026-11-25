@@ -1,11 +1,13 @@
 import { Link, NavLink } from 'react-router-dom';
 import { usePlayer } from '../../hooks/usePlayer.js';
+import { useRoom } from '../../hooks/useRoom.js';
 import { useSocket } from '../../hooks/useSocket.js';
 import { Badge, StatusIndicator } from '../ui/index.js';
 
 const SOCKET_LABELS = {
   connected: 'Socket Online',
   connecting: 'Connecting...',
+  reconnecting: 'Reconnecting...',
   error: 'Socket Error',
   disconnected: 'Socket Offline',
 };
@@ -20,6 +22,7 @@ const navLinkClass = ({ isActive }) =>
 export function Navbar() {
   const { status } = useSocket();
   const { displayName, hasIdentity } = usePlayer();
+  const { roomCode } = useRoom();
 
   return (
     <header className="sticky top-0 z-30 border-b-2 border-slate-200 bg-white/90 backdrop-blur-md">
@@ -52,6 +55,11 @@ export function Navbar() {
             <NavLink to="/join" className={navLinkClass}>
               Join Room
             </NavLink>
+            {roomCode && (
+              <NavLink to={`/lobby/${roomCode}`} className={navLinkClass}>
+                Lobby ({roomCode})
+              </NavLink>
+            )}
           </nav>
         </div>
 

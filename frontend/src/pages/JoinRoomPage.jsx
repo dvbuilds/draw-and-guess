@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { PlayerIdentityCard } from '../components/player/PlayerIdentityCard.jsx';
-import { RoomJoinedSummary } from '../components/room/RoomJoinedSummary.jsx';
 import { Badge, Button, Card, Input } from '../components/ui/index.js';
 import { usePlayer } from '../hooks/usePlayer.js';
-import { joinRoom } from '../services/roomService.js';
+import { useRoom } from '../hooks/useRoom.js';
 import { validateRoomCodeInput } from '../utils/roomValidation.js';
 
 function formatJoinError(err) {
@@ -50,12 +49,13 @@ function formatJoinError(err) {
 }
 
 export function JoinRoomPage() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialCode = (searchParams.get('roomCode') || '').trim().toUpperCase();
   const initialToken = (searchParams.get('inviteToken') || '').trim();
 
-  const { playerId, displayName, identityToken, hasIdentity, isRestoring, clearIdentity } =
-    usePlayer();
+  const { displayName, hasIdentity, isRestoring, clearIdentity } = usePlayer();
+  const { joinRoom } = useRoom();
 
   const [roomCode, setRoomCode] = useState(initialCode);
   const [inviteToken, setInviteToken] = useState(initialToken);
@@ -63,7 +63,6 @@ export function JoinRoomPage() {
   const [codeError, setCodeError] = useState(null);
   const [serverError, setServerError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [joinedRoom, setJoinedRoom] = useState(null);
 
   useEffect(() => {
     const paramCode = (searchParams.get('roomCode') || '').trim().toUpperCase();
@@ -89,12 +88,13 @@ export function JoinRoomPage() {
     setIsSubmitting(true);
     try {
       const room = await joinRoom({
-        playerId,
-        identityToken,
         roomCode: validation.value,
         inviteToken,
       });
-      setJoinedRoom(room);
+      const tokenQuery = inviteToken.trim()
+        ? `?inviteToken=${encodeURIComponent(inviteToken.trim())}`
+        : '';
+      navigate(`/lobby/${room.roomCode}${tokenQuery}`);
     } catch (err) {
       const formatted = formatJoinError(err);
       setServerError(formatted);
@@ -131,7 +131,7 @@ export function JoinRoomPage() {
         </Link>
       </div>
 
-      {hasInviteLinkParams && !joinedRoom && (
+      {hasInviteLinkParams && (
         <Card variant="tinted" className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
           <div>
             <p className="font-bold">
@@ -162,15 +162,6 @@ export function JoinRoomPage() {
           </Card>
           <PlayerIdentityCard />
         </div>
-      ) : joinedRoom ? (
-        <RoomJoinedSummary
-          room={joinedRoom}
-          currentPlayerId={playerId}
-          onReset={() => {
-            setJoinedRoom(null);
-            setServerError(null);
-          }}
-        />
       ) : (
         <Card variant="elevated" className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -251,6 +242,16 @@ export function JoinRoomPage() {
                   >
                     Switch guest nickname now
                   </button>
+                )}
+                {serverError.code === 'ALREADY_IN_ROOM' && roomCode && (
+                  <Link
+                    to={`/lobby/${roomCode.trim().toUpperCase()}${
+                      inviteToken.trim() ? `?inviteToken=${encodeURIComponent(inviteToken.trim())}` : ''
+                    }`}
+                    className="inline-block underline font-bold text-rose-800 hover:text-rose-900"
+                  >
+                    Enter Lobby ({roomCode.trim().toUpperCase()}) →
+                  </Link>
                 )}
               </div>
             )}

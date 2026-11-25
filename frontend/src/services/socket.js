@@ -12,7 +12,8 @@ export function getSocket() {
       autoConnect: false,
       withCredentials: true,
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
+      reconnection: true,
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
     });
   }
@@ -20,29 +21,35 @@ export function getSocket() {
 }
 
 /**
- * Emits a Socket.IO event following the backend ack contract:
- * { success: true, data } | { success: false, error }
+ * Emits a Socket.IO event following the backend (payload, ack) contract:
+ * { success: true, data } | { success: false, error: { code, message } }
  */
-export function emitWithAck(event, payload, timeoutMs = 5000) {
+export function emitWithAck(event, payload = {}, timeoutMs = 5000) {
   const socket = getSocket();
 
   return new Promise((resolve, reject) => {
     if (!socket.connected) {
-      reject(new Error('Socket is not connected'));
+      const err = new Error('Socket is not connected');
+      err.code = 'SOCKET_DISCONNECTED';
+      reject(err);
       return;
     }
 
-    const args = payload !== undefined ? [payload] : [];
-
     socket
       .timeout(timeoutMs)
-      .emit(event, ...args, (err, response) => {
+      .emit(event, payload ?? {}, (err, response) => {
         if (err) {
-          reject(new Error(`Socket ack timeout for event "${event}"`));
+          const timeoutErr = new Error(`Request timed out for "${event}"`);
+          timeoutErr.code = 'TIMEOUT';
+          reject(timeoutErr);
           return;
         }
         if (response?.success === false) {
-          reject(new Error(response?.error?.message || `Socket event "${event}" failed`));
+          const serverErr = new Error(
+            response?.error?.message || `Socket event "${event}" failed`
+          );
+          serverErr.code = response?.error?.code || 'SOCKET_ERROR';
+          reject(serverErr);
           return;
         }
         resolve(response?.data ?? response);
@@ -51,5 +58,21 @@ export function emitWithAck(event, payload, timeoutMs = 5000) {
 }
 
 export function pingServer() {
-  return emitWithAck('system:ping');
+  return emitWithAck('system:ping', {});
+}
+
+export function joinLobbySocket({ roomCode, playerId, identityToken, inviteToken }) {
+  const payload = { roomCode, playerId, identityToken };
+  if (typeof inviteToken === 'string' && inviteToken.trim()) {
+    payload.inviteToken = inviteToken.trim();
+  }
+  return emitWithAck('lobby:join', payload);
+}
+
+export function leaveLobbySocket(reason = 'user_left') {
+  return emitWithAck('lobby:leave', { reason });
+}
+
+export function startGameSocket() {
+  return emitWithAck('game:start', {});
 }
