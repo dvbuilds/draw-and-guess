@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { GameCompleteBanner } from '../components/game/GameCompleteBanner.jsx';
-import { GamePlayerList } from '../components/game/GamePlayerList.jsx';
 import { GameStagePlaceholder } from '../components/game/GameStagePlaceholder.jsx';
 import { GameTurnHeader } from '../components/game/GameTurnHeader.jsx';
+import { GuessInputPanel } from '../components/game/GuessInputPanel.jsx';
+import { RoundResultsBanner } from '../components/game/RoundResultsBanner.jsx';
+import { ScoreboardCard } from '../components/game/ScoreboardCard.jsx';
 import { WordBlanksDisplay } from '../components/game/WordBlanksDisplay.jsx';
 import { WordSelectionCard } from '../components/game/WordSelectionCard.jsx';
 import { LobbyConnectionBanner } from '../components/lobby/LobbyConnectionBanner.jsx';
@@ -43,6 +45,13 @@ export function GamePage() {
     wordState,
     strokes,
     isSyncingDrawing,
+    leaderboard,
+    guessFeed,
+    lastGuessFeedback,
+    hasGuessedCorrectly,
+    lastRoundResult,
+    isSubmittingGuess,
+    guessError,
     status: gameStatus,
     currentRound,
     currentTurn,
@@ -56,6 +65,9 @@ export function GamePage() {
     error: gameError,
     advanceTurn,
     selectWord,
+    submitGuess,
+    dismissRoundResult,
+    clearGuessError,
     appendLocalSegment,
     sendStrokeSegment,
     undoDrawing,
@@ -64,13 +76,16 @@ export function GamePage() {
 
   const [leaving, setLeaving] = useState(false);
 
-  // If connected to room but game is still in lobby state, return to lobby
+  // Redirect between lobby, active game, and final results screens
   useEffect(() => {
-    if (lobbyStatus === 'joined' && gameStatus === 'lobby' && roomCode) {
-      const tokenQuery = inviteTokenParam
-        ? `?inviteToken=${encodeURIComponent(inviteTokenParam)}`
-        : '';
+    if (!roomCode) return;
+    const tokenQuery = inviteTokenParam
+      ? `?inviteToken=${encodeURIComponent(inviteTokenParam)}`
+      : '';
+    if (lobbyStatus === 'joined' && gameStatus === 'lobby') {
       navigate(`/lobby/${roomCode}${tokenQuery}`, { replace: true });
+    } else if (gameStatus === 'completed') {
+      navigate(`/results/${roomCode}${tokenQuery}`, { replace: true });
     }
   }, [lobbyStatus, gameStatus, roomCode, inviteTokenParam, navigate]);
 
@@ -170,6 +185,14 @@ export function GamePage() {
             lastTurnReason={gameState.lastTurnReason}
           />
 
+          {lastRoundResult && (
+            <RoundResultsBanner
+              result={lastRoundResult}
+              players={players}
+              onDismiss={dismissRoundResult}
+            />
+          )}
+
           {gameStatus === 'completed' && (
             <GameCompleteBanner
               totalRounds={totalRounds}
@@ -220,8 +243,23 @@ export function GamePage() {
               />
             </div>
 
-            <div className="lg:col-span-4">
-              <GamePlayerList
+            <div className="space-y-6 lg:col-span-4">
+              <GuessInputPanel
+                isCurrentDrawer={isCurrentDrawer}
+                wordPhase={wordState.phase}
+                gameStatus={gameStatus}
+                isSocketConnected={isSocketConnected}
+                hasGuessedCorrectly={hasGuessedCorrectly}
+                isSubmittingGuess={isSubmittingGuess}
+                lastGuessFeedback={lastGuessFeedback}
+                guessFeed={guessFeed}
+                guessError={guessError}
+                onSubmitGuess={submitGuess}
+                onClearGuessError={clearGuessError}
+              />
+
+              <ScoreboardCard
+                leaderboard={leaderboard}
                 players={players}
                 currentPlayerId={playerId}
                 currentDrawerPlayerId={currentDrawerPlayerId}

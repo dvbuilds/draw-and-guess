@@ -46,13 +46,16 @@ export function LobbyPage() {
 
   const effectiveInviteToken = inviteTokenParam || room?.inviteToken || '';
 
-  // Automatically transition from Lobby to Game Screen when game starts
+  // Automatically transition from Lobby to Game or Results screen
   useEffect(() => {
-    if ((gameStatus === 'started' || gameStatus === 'completed') && roomCode) {
-      const tokenQuery = effectiveInviteToken
-        ? `?inviteToken=${encodeURIComponent(effectiveInviteToken)}`
-        : '';
+    if (!roomCode) return;
+    const tokenQuery = effectiveInviteToken
+      ? `?inviteToken=${encodeURIComponent(effectiveInviteToken)}`
+      : '';
+    if (gameStatus === 'started') {
       navigate(`/game/${roomCode}${tokenQuery}`, { replace: true });
+    } else if (gameStatus === 'completed') {
+      navigate(`/results/${roomCode}${tokenQuery}`, { replace: true });
     }
   }, [gameStatus, roomCode, effectiveInviteToken, navigate]);
   const shareableInviteLink =

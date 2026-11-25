@@ -8,6 +8,7 @@ import {
   selectWordSocket,
   sendDrawingStrokeSocket,
   startGameSocket,
+  submitGuessSocket,
   syncDrawingSocket,
   undoDrawingSocket,
 } from '../services/socket.js';
@@ -52,6 +53,29 @@ function turnKeyOf(round, turn, drawerId) {
   return `${round}:${turn}:${drawerId}`;
 }
 
+function leaderboardFromPlayers(playerList = []) {
+  if (!playerList.length) return [];
+  const sorted = [...playerList]
+    .map((p) => ({
+      playerId: p.playerId,
+      displayName: p.displayName,
+      score: Number.isFinite(p.score) ? p.score : 0,
+    }))
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        a.displayName.localeCompare(b.displayName, 'en') ||
+        a.playerId.localeCompare(b.playerId)
+    );
+  let lastScore = null;
+  let rank = 0;
+  return sorted.map((p, idx) => {
+    if (p.score !== lastScore) rank = idx + 1;
+    lastScore = p.score;
+    return { ...p, rank };
+  });
+}
+
 export function GameProvider({ children }) {
   const { playerId } = usePlayer();
   const { socket, isConnected } = useSocket();
@@ -61,6 +85,17 @@ export function GameProvider({ children }) {
   const [wordState, setWordState] = useState(INITIAL_WORD_STATE);
   const [strokes, setStrokes] = useState([]);
   const [isSyncingDrawing, setIsSyncingDrawing] = useState(false);
+
+  // Phase 8: Guessing & Scoring state (authoritative from backend events)
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [guessFeed, setGuessFeed] = useState([]);
+  const [lastGuessFeedback, setLastGuessFeedback] = useState(null);
+  const [hasGuessedCorrectly, setHasGuessedCorrectly] = useState(false);
+  const [lastRoundResult, setLastRoundResult] = useState(null);
+  const [finalResults, setFinalResults] = useState(null);
+  const [isSubmittingGuess, setIsSubmittingGuess] = useState(false);
+  const [guessError, setGuessError] = useState(null);
+
   const [gameLog, setGameLog] = useState([]);
   const [isStartingGame, setIsStartingGame] = useState(false);
   const [isAdvancingTurn, setIsAdvancingTurn] = useState(false);
@@ -81,6 +116,13 @@ export function GameProvider({ children }) {
     setGameState(INITIAL_GAME_STATE);
     setWordState(INITIAL_WORD_STATE);
     setStrokes([]);
+    setLeaderboard([]);
+    setGuessFeed([]);
+    setLastGuessFeedback(null);
+    setHasGuessedCorrectly(false);
+    setLastRoundResult(null);
+    setFinalResults(null);
+    setGuessError(null);
     setGameLog([]);
     setError(null);
     lastLogKeyRef.current = null;
@@ -106,6 +148,9 @@ export function GameProvider({ children }) {
       currentTurnKeyRef.current = nextKey;
       setWordState(INITIAL_WORD_STATE);
       setStrokes([]);
+      setHasGuessedCorrectly(false);
+      setLastGuessFeedback(null);
+      setGuessError(null);
     }
     setGameState((prev) => ({
       ...prev,
@@ -132,7 +177,6 @@ export function GameProvider({ children }) {
     }
   }, [isConnected]);
 
-  // Automatically sync active canvas snapshot whenever joined to a started game
   useEffect(() => {
     if (lobbyStatus === 'joined' && isConnected && gameState.status === 'started') {
       syncDrawing();
@@ -144,17 +188,23 @@ export function GameProvider({ children }) {
       if (!payload) return;
       if (Array.isArray(payload.players)) {
         syncPlayers(payload.players);
+        setLeaderboard(leaderboardFromPlayers(payload.players));
       }
       const round = payload.currentRound ?? 1;
       const turn = payload.currentTurn ?? 1;
       const drawerId = payload.currentDrawerPlayerId ?? null;
       const nextKey = turnKeyOf(round, turn, drawerId);
 
-      // Only reset turn state when entering a new turn (prevents ack wiping word_options)
       if (nextKey !== currentTurnKeyRef.current) {
         currentTurnKeyRef.current = nextKey;
         setWordState(INITIAL_WORD_STATE);
         setStrokes([]);
+        setGuessFeed([]);
+        setLastGuessFeedback(null);
+        setHasGuessedCorrectly(false);
+        setLastRoundResult(null);
+        setFinalResults(null);
+        setGuessError(null);
       }
 
       setGameState({
@@ -183,6 +233,9 @@ export function GameProvider({ children }) {
       if (!payload) return;
       if (Array.isArray(payload.players)) {
         syncPlayers(payload.players);
+        setLeaderboard((prev) =>
+          prev.length ? prev : leaderboardFromPlayers(payload.players)
+        );
       }
       const round = payload.currentRound;
       const turn = payload.currentTurn;
@@ -193,6 +246,9 @@ export function GameProvider({ children }) {
         currentTurnKeyRef.current = nextKey;
         setWordState(INITIAL_WORD_STATE);
         setStrokes([]);
+        setLastGuessFeedback(null);
+        setHasGuessedCorrectly(false);
+        setGuessError(null);
       }
 
       setGameState((prev) => ({
@@ -226,6 +282,15 @@ export function GameProvider({ children }) {
       if (Array.isArray(nextState.players)) {
         syncPlayers(nextState.players);
       }
+      if (Array.isArray(payload.leaderboard)) {
+        setLeaderboard(payload.leaderboard);
+      }
+      setFinalResults((prev) => ({
+        leaderboard: payload.leaderboard || prev?.leaderboard || [],
+        winners: payload.winners || prev?.winners || [],
+        completedAt: payload.completedAt || new Date().toISOString(),
+        reason: payload.reason || 'rounds_complete',
+      }));
       currentTurnKeyRef.current = null;
       setWordState(INITIAL_WORD_STATE);
       setStrokes([]);
@@ -274,11 +339,9 @@ export function GameProvider({ children }) {
     [playerId]
   );
 
-  // Subscribe to backend game, word, and drawing Socket.IO broadcasts
+  // Subscribe to backend game, word, drawing, guessing & scoring Socket.IO events
   useEffect(() => {
-    const handleGameStart = (event) => {
-      applyGameStart(event);
-    };
+    const handleGameStart = (event) => applyGameStart(event);
 
     const handleRoundStarted = (event) => {
       if (!event) return;
@@ -296,13 +359,8 @@ export function GameProvider({ children }) {
       );
     };
 
-    const handleGameTurn = (event) => {
-      applyGameTurn(event);
-    };
-
-    const handleGameComplete = (event) => {
-      applyGameComplete(event);
-    };
+    const handleGameTurn = (event) => applyGameTurn(event);
+    const handleGameComplete = (event) => applyGameComplete(event);
 
     const handleWordOptions = (event) => {
       if (!event || !Array.isArray(event.options)) return;
@@ -317,9 +375,7 @@ export function GameProvider({ children }) {
       setError(null);
     };
 
-    const handleWordAssigned = (event) => {
-      applyWordAssigned(event);
-    };
+    const handleWordAssigned = (event) => applyWordAssigned(event);
 
     const handleWordSelected = (event) => {
       if (!event) return;
@@ -357,6 +413,63 @@ export function GameProvider({ children }) {
       setStrokes([]);
     };
 
+    const handleGuessFeedback = (event) => {
+      if (!event) return;
+      setGuessFeed((prev) => [
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          ...event,
+          timestamp: new Date().toISOString(),
+        },
+        ...prev,
+      ].slice(0, 30));
+
+      if (event.playerId === playerId) {
+        setLastGuessFeedback(event);
+        if (event.correct) {
+          setHasGuessedCorrectly(true);
+        }
+      }
+      if (event.correct) {
+        appendLog(
+          `correct:${currentTurnKeyRef.current || ''}:${event.playerId}`,
+          'guess',
+          `${event.displayName} guessed correctly (+${event.scoreAwarded ?? 0} pts)`
+        );
+      }
+    };
+
+    const handleScoreboardUpdated = (event) => {
+      if (!Array.isArray(event?.leaderboard)) return;
+      setLeaderboard(event.leaderboard);
+    };
+
+    const handleRoundComplete = (event) => {
+      if (!event) return;
+      setLastRoundResult(event);
+      if (Array.isArray(event.leaderboard)) {
+        setLeaderboard(event.leaderboard);
+      }
+      appendLog(
+        `round-complete:${event.currentRound}:${event.currentTurn}:${event.completedAt}`,
+        'round_complete',
+        `Round ${event.currentRound}, Turn ${event.currentTurn} ended (${event.reason})`
+      );
+    };
+
+    const handleLeaderboardFinal = (event) => {
+      if (!event) return;
+      if (Array.isArray(event.leaderboard)) {
+        setLeaderboard(event.leaderboard);
+      }
+      setFinalResults((prev) => ({
+        leaderboard: event.leaderboard || prev?.leaderboard || [],
+        winners: event.winners || prev?.winners || [],
+        completedAt: prev?.completedAt || new Date().toISOString(),
+        reason: prev?.reason || 'rounds_complete',
+      }));
+    };
+
     socket.on('game_start', handleGameStart);
     socket.on('round_started', handleRoundStarted);
     socket.on('game_turn', handleGameTurn);
@@ -367,6 +480,10 @@ export function GameProvider({ children }) {
     socket.on('drawing:stroke', handleDrawingStroke);
     socket.on('drawing:undone', handleDrawingUndone);
     socket.on('drawing:cleared', handleDrawingCleared);
+    socket.on('guess_feedback', handleGuessFeedback);
+    socket.on('scoreboard_updated', handleScoreboardUpdated);
+    socket.on('round_complete', handleRoundComplete);
+    socket.on('leaderboard_final', handleLeaderboardFinal);
 
     return () => {
       socket.off('game_start', handleGameStart);
@@ -379,6 +496,10 @@ export function GameProvider({ children }) {
       socket.off('drawing:stroke', handleDrawingStroke);
       socket.off('drawing:undone', handleDrawingUndone);
       socket.off('drawing:cleared', handleDrawingCleared);
+      socket.off('guess_feedback', handleGuessFeedback);
+      socket.off('scoreboard_updated', handleScoreboardUpdated);
+      socket.off('round_complete', handleRoundComplete);
+      socket.off('leaderboard_final', handleLeaderboardFinal);
     };
   }, [
     socket,
@@ -454,6 +575,30 @@ export function GameProvider({ children }) {
     [applyWordAssigned]
   );
 
+  const submitGuess = useCallback(async (rawGuess) => {
+    setIsSubmittingGuess(true);
+    setGuessError(null);
+    try {
+      const result = await submitGuessSocket(rawGuess);
+      if (result) {
+        setLastGuessFeedback(result);
+        if (result.correct) {
+          setHasGuessedCorrectly(true);
+        }
+      }
+      return result;
+    } catch (err) {
+      const normalized = {
+        code: err?.code || 'GUESS_SUBMIT_FAILED',
+        message: err?.message || 'Unable to submit guess',
+      };
+      setGuessError(normalized);
+      throw normalized;
+    } finally {
+      setIsSubmittingGuess(false);
+    }
+  }, []);
+
   const appendLocalSegment = useCallback((segment) => {
     setStrokes((prev) => applyStrokeSegment(prev, segment));
   }, []);
@@ -504,6 +649,14 @@ export function GameProvider({ children }) {
     }
   }, []);
 
+  const dismissRoundResult = useCallback(() => {
+    setLastRoundResult(null);
+  }, []);
+
+  const clearGuessError = useCallback(() => {
+    setGuessError(null);
+  }, []);
+
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -520,12 +673,25 @@ export function GameProvider({ children }) {
       playerId === gameState.currentDrawerPlayerId
   );
 
+  const effectiveLeaderboard = useMemo(() => {
+    if (leaderboard.length > 0) return leaderboard;
+    return leaderboardFromPlayers(players);
+  }, [leaderboard, players]);
+
   const value = useMemo(
     () => ({
       gameState,
       wordState,
       strokes,
       isSyncingDrawing,
+      leaderboard: effectiveLeaderboard,
+      guessFeed,
+      lastGuessFeedback,
+      hasGuessedCorrectly,
+      lastRoundResult,
+      finalResults,
+      isSubmittingGuess,
+      guessError,
       status: gameState.status,
       currentRound: gameState.currentRound,
       currentTurn: gameState.currentTurn,
@@ -542,6 +708,9 @@ export function GameProvider({ children }) {
       startGame,
       advanceTurn,
       selectWord,
+      submitGuess,
+      dismissRoundResult,
+      clearGuessError,
       appendLocalSegment,
       sendStrokeSegment,
       undoDrawing,
@@ -555,6 +724,14 @@ export function GameProvider({ children }) {
       wordState,
       strokes,
       isSyncingDrawing,
+      effectiveLeaderboard,
+      guessFeed,
+      lastGuessFeedback,
+      hasGuessedCorrectly,
+      lastRoundResult,
+      finalResults,
+      isSubmittingGuess,
+      guessError,
       currentDrawer,
       isCurrentDrawer,
       isConnected,
@@ -566,6 +743,9 @@ export function GameProvider({ children }) {
       startGame,
       advanceTurn,
       selectWord,
+      submitGuess,
+      dismissRoundResult,
+      clearGuessError,
       appendLocalSegment,
       sendStrokeSegment,
       undoDrawing,

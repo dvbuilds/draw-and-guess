@@ -60,15 +60,19 @@ export function Navbar() {
             {roomCode && (
               <NavLink
                 to={
-                  gameStatus === 'started' || gameStatus === 'completed'
-                    ? `/game/${roomCode}`
-                    : `/lobby/${roomCode}`
+                  gameStatus === 'completed'
+                    ? `/results/${roomCode}`
+                    : gameStatus === 'started'
+                      ? `/game/${roomCode}`
+                      : `/lobby/${roomCode}`
                 }
                 className={navLinkClass}
               >
-                {gameStatus === 'started' || gameStatus === 'completed'
-                  ? `Game (${roomCode})`
-                  : `Lobby (${roomCode})`}
+                {gameStatus === 'completed'
+                  ? `Results (${roomCode})`
+                  : gameStatus === 'started'
+                    ? `Game (${roomCode})`
+                    : `Lobby (${roomCode})`}
               </NavLink>
             )}
           </nav>

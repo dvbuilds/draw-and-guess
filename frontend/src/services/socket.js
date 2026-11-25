@@ -85,6 +85,10 @@ export function selectWordSocket(wordId) {
   return emitWithAck('word:select', { wordId });
 }
 
+export function submitGuessSocket(guess) {
+  return emitWithAck('guess:submit', { guess });
+}
+
 export function sendDrawingStrokeSocket(segment) {
   return emitWithAck('drawing:stroke', segment);
 }

@@ -180,6 +180,10 @@ test('creates public and private rooms with every setting and invite link format
     wordChoices: 4,
     hints: 2,
     wordMode: 'Normal',
+    scoring: {
+      correctGuessPoints: 100,
+      drawerPointsPerCorrectGuess: 50,
+    },
   });
   assert.ok(publicRoom.inviteLink.endsWith(`/?roomCode=${publicRoom.roomCode}`));
   assert.equal(publicRoom.inviteToken, undefined);
