@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { usePlayer } from '../../hooks/usePlayer.js';
 import { useSocket } from '../../hooks/useSocket.js';
 import { Badge, StatusIndicator } from '../ui/index.js';
 
@@ -11,6 +12,7 @@ const SOCKET_LABELS = {
 
 export function Navbar() {
   const { status } = useSocket();
+  const { displayName, hasIdentity } = usePlayer();
 
   return (
     <header className="sticky top-0 z-30 border-b-2 border-slate-200 bg-white/90 backdrop-blur-md">
@@ -32,9 +34,14 @@ export function Navbar() {
           </div>
         </Link>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {hasIdentity && displayName && (
+            <Badge variant="emerald" className="max-w-36 truncate">
+              Player: {displayName}
+            </Badge>
+          )}
           <Badge variant="indigo" className="hidden sm:inline-flex">
-            Phase 1 · Foundation
+            Phase 2 · Player Identity
           </Badge>
           <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
             <StatusIndicator

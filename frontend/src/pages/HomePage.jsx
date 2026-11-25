@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { PlayerIdentityCard } from '../components/player/PlayerIdentityCard.jsx';
 import { Badge, Button, Card, StatusIndicator } from '../components/ui/index.js';
 import { env } from '../config/env.js';
 import { useSocket } from '../hooks/useSocket.js';
@@ -93,12 +94,12 @@ export function HomePage() {
 
   return (
     <div className="space-y-10">
-      {/* Hero Banner */}
-      <section className="grid gap-6 lg:grid-cols-12 lg:items-center">
+      {/* Hero Banner + Player Identity Entry */}
+      <section className="grid gap-6 lg:grid-cols-12 lg:items-start">
         <div className="space-y-5 lg:col-span-7">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="amber">Sketch &amp; Guess Party Game</Badge>
-            <Badge variant="slate">Phase 1 Ready</Badge>
+            <Badge variant="slate">Guest Identity Ready</Badge>
           </div>
 
           <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
@@ -109,27 +110,12 @@ export function HomePage() {
           </h1>
 
           <p className="max-w-xl text-base leading-relaxed text-slate-600 sm:text-lg">
-            Welcome to the Draw &amp; Guess client foundation. The app shell, Tailwind theme,
-            Axios API layer, and Socket.IO real-time context are wired up and ready for
-            upcoming lobby and gameplay phases.
+            Pick a guest nickname to establish your player identity. Your session token is
+            saved locally and restored automatically when you return.
           </p>
 
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <Button variant="primary" size="lg" onClick={checkHealth} disabled={healthLoading}>
-              {healthLoading ? 'Checking Server...' : 'Verify Backend Health'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="lg"
-              onClick={handlePing}
-              disabled={!isConnected || pingLoading}
-            >
-              {pingLoading ? 'Pinging...' : 'Send Socket Ping'}
-            </Button>
-          </div>
-
           {/* Decorative Color Swatches */}
-          <div className="flex items-center gap-2 pt-2">
+          <div className="flex items-center gap-2 pt-1">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Studio Palette
             </span>
@@ -142,102 +128,117 @@ export function HomePage() {
               ))}
             </div>
           </div>
-        </div>
 
-        {/* Live Connection Diagnostics Card */}
-        <div className="lg:col-span-5">
-          <Card variant="elevated" className="space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          {/* Live Connection Diagnostics Card */}
+          <Card className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-base font-extrabold text-slate-900">
+                <h2 className="text-sm font-extrabold text-slate-900">
                   Backend Connection
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Live REST &amp; Socket.IO diagnostics
+                  REST &amp; Socket.IO diagnostics
                 </p>
               </div>
-              <Badge variant={isConnected && health ? 'emerald' : 'slate'}>
-                {isConnected && health ? 'Synced' : 'Standby'}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={checkHealth} disabled={healthLoading}>
+                  {healthLoading ? 'Checking...' : 'Check Health'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handlePing}
+                  disabled={!isConnected || pingLoading}
+                >
+                  {pingLoading ? 'Pinging...' : 'Socket Ping'}
+                </Button>
+              </div>
             </div>
 
-            {/* REST /api/health Status */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                  REST API · GET /api/health
-                </span>
-                <StatusIndicator
-                  state={apiIndicatorState}
-                  label={
-                    healthLoading
-                      ? 'Checking'
-                      : health
-                        ? 'Healthy'
-                        : healthError
-                          ? 'Unreachable'
-                          : 'Idle'
-                  }
-                />
-              </div>
-
-              {health ? (
-                <dl className="grid grid-cols-2 gap-2 text-xs text-slate-600">
-                  <div>
-                    <dt className="text-slate-400">Database</dt>
-                    <dd className="font-semibold capitalize text-slate-800">{health.db}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-slate-400">Uptime</dt>
-                    <dd className="font-semibold text-slate-800">{health.uptime}s</dd>
-                  </div>
-                </dl>
-              ) : (
-                <p className="text-xs text-rose-600">
-                  {healthError || `Waiting for response from ${env.API_BASE_URL}`}
-                </p>
-              )}
-            </div>
-
-            {/* Socket.IO Status */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                  Socket.IO · system:ping
-                </span>
-                <StatusIndicator state={socketStatus} label={socketStatus} />
-              </div>
-
-              <div className="text-xs text-slate-600 space-y-1">
-                <p className="truncate">
-                  <span className="text-slate-400">Socket ID: </span>
-                  <span className="font-mono font-semibold text-slate-800">
-                    {socketId || '—'}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {/* REST /api/health Status */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    GET /api/health
                   </span>
-                </p>
-                {pingResult && (
-                  <p className="text-emerald-700 font-medium">
-                    Ack: &ldquo;{pingResult.message}&rdquo; ({pingResult.latencyMs}ms)
+                  <StatusIndicator
+                    state={apiIndicatorState}
+                    label={
+                      healthLoading
+                        ? 'Checking'
+                        : health
+                          ? 'Healthy'
+                          : healthError
+                            ? 'Unreachable'
+                            : 'Idle'
+                    }
+                  />
+                </div>
+
+                {health ? (
+                  <dl className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                    <div>
+                      <dt className="text-slate-400">Database</dt>
+                      <dd className="font-semibold capitalize text-slate-800">{health.db}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-400">Uptime</dt>
+                      <dd className="font-semibold text-slate-800">{health.uptime}s</dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="text-xs text-rose-600">
+                    {healthError || `Waiting for ${env.API_BASE_URL}`}
                   </p>
                 )}
-                {(pingError || socketError) && (
-                  <p className="text-rose-600">{pingError || socketError}</p>
-                )}
               </div>
 
-              <div className="flex gap-2 pt-1">
-                {isConnected ? (
-                  <Button variant="outline" size="sm" onClick={disconnect}>
-                    Disconnect
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" onClick={connect}>
-                    Reconnect
-                  </Button>
-                )}
+              {/* Socket.IO Status */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    Socket.IO
+                  </span>
+                  <StatusIndicator state={socketStatus} label={socketStatus} />
+                </div>
+
+                <div className="text-xs text-slate-600 space-y-1">
+                  <p className="truncate">
+                    <span className="text-slate-400">ID: </span>
+                    <span className="font-mono font-semibold text-slate-800">
+                      {socketId || '—'}
+                    </span>
+                  </p>
+                  {pingResult && (
+                    <p className="text-emerald-700 font-medium">
+                      Ack: &ldquo;{pingResult.message}&rdquo; ({pingResult.latencyMs}ms)
+                    </p>
+                  )}
+                  {(pingError || socketError) && (
+                    <p className="text-rose-600">{pingError || socketError}</p>
+                  )}
+                </div>
+
+                <div>
+                  {isConnected ? (
+                    <Button variant="ghost" size="sm" onClick={disconnect} className="px-2 py-1">
+                      Disconnect
+                    </Button>
+                  ) : (
+                    <Button variant="ghost" size="sm" onClick={connect} className="px-2 py-1">
+                      Reconnect
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </Card>
+        </div>
+
+        {/* Guest Player Identity Card */}
+        <div className="lg:col-span-5">
+          <PlayerIdentityCard />
         </div>
       </section>
 
@@ -247,10 +248,10 @@ export function HomePage() {
           <div>
             <h2 className="text-xl font-extrabold text-slate-900">How Draw &amp; Guess Works</h2>
             <p className="text-sm text-slate-500">
-              Upcoming gameplay modules will plug directly into this foundation.
+              Upcoming lobby and gameplay modules will build on your guest identity.
             </p>
           </div>
-          <Badge variant="slate">Lobby &amp; Canvas coming in next phase</Badge>
+          <Badge variant="slate">Rooms &amp; Canvas coming in Phase 3+</Badge>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
