@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useGame } from './useGame.js';
 import { usePlayer } from './usePlayer.js';
 import { useRoom } from './useRoom.js';
 import { useSocket } from './useSocket.js';
@@ -25,16 +26,19 @@ export function useLobby(roomCode, inviteToken) {
     isHost,
     connectedPlayersCount,
     lobbyStatus,
-    gameStatus,
-    gameStartedAt,
-    isStartingGame,
     activityLog,
     error: lobbyError,
     connectToLobby,
     leaveLobby,
-    startGame,
     clearError,
   } = useRoom();
+  const {
+    status: gameStatus,
+    gameState,
+    isStartingGame,
+    startGame,
+    error: gameError,
+  } = useGame();
 
   const normalizedCode = (roomCode || '').trim().toUpperCase();
 
@@ -77,11 +81,11 @@ export function useLobby(roomCode, inviteToken) {
     reconnectAttempt,
     socketError,
     gameStatus,
-    gameStartedAt,
+    gameStartedAt: gameState.startedAt,
     isStartingGame,
     canStartGame,
     activityLog,
-    error: lobbyError,
+    error: lobbyError || gameError,
     connectSocket,
     disconnectSocket,
     retryJoinLobby: () => connectToLobby({ roomCode: normalizedCode, inviteToken }),

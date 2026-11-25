@@ -76,3 +76,7 @@ export function leaveLobbySocket(reason = 'user_left') {
 export function startGameSocket() {
   return emitWithAck('game:start', {});
 }
+
+export function nextTurnSocket() {
+  return emitWithAck('game:next_turn', {});
+}

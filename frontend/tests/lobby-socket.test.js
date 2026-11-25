@@ -36,7 +36,7 @@ function resetRoom() {
     hostPlayerId: players[0].id,
     gameStatus: 'lobby',
     gameStartedAt: null,
-    settings: { maxPlayers: 8 },
+    settings: { maxPlayers: 8, rounds: 2 },
     members: players.map((p, index) => ({
       playerId: p.id,
       displayName: p.name,
@@ -108,14 +108,18 @@ before(async () => {
   });
   Room.findById = async (id) => (String(id) === room.id ? room : null);
   Room.findOneAndUpdate = async (filter, update) => {
+    const statusMatches =
+      typeof filter.gameStatus === 'object'
+        ? filter.gameStatus.$in.includes(room.gameStatus ?? null)
+        : room.gameStatus === filter.gameStatus;
     if (
-      !filter.gameStatus.$in.includes(room.gameStatus ?? null) ||
-      String(room.hostPlayerId) !== String(filter.hostPlayerId)
+      !statusMatches ||
+      (filter.hostPlayerId && String(room.hostPlayerId) !== String(filter.hostPlayerId))
     ) {
       return null;
     }
     const connectedCount = room.members.filter((m) => m.isConnected).length;
-    if (connectedCount < 2) return null;
+    if (filter.$expr && connectedCount < 2) return null;
     Object.assign(room, update.$set);
     return room;
   };

@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { MainLayout } from '../components/layout/MainLayout.jsx';
 import { CreateRoomPage } from '../pages/CreateRoomPage.jsx';
+import { GamePage } from '../pages/GamePage.jsx';
 import { HomePage } from '../pages/HomePage.jsx';
 import { JoinRoomPage } from '../pages/JoinRoomPage.jsx';
 import { LobbyPage } from '../pages/LobbyPage.jsx';
@@ -15,6 +16,7 @@ export function AppRouter() {
           <Route path="/create" element={<CreateRoomPage />} />
           <Route path="/join" element={<JoinRoomPage />} />
           <Route path="/lobby/:roomCode" element={<LobbyPage />} />
+          <Route path="/game/:roomCode" element={<GamePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

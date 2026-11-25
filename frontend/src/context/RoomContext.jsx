@@ -8,7 +8,6 @@ import {
 import {
   joinLobbySocket,
   leaveLobbySocket,
-  startGameSocket,
 } from '../services/socket.js';
 import {
   clearStoredRoomSession,
@@ -52,14 +51,18 @@ export function RoomProvider({ children }) {
   const [room, setRoom] = useState(initialStored);
   const [players, setPlayers] = useState([]);
   const [lobbyStatus, setLobbyStatus] = useState('idle'); // idle | joining | joined | error
-  const [gameStatus, setGameStatus] = useState('lobby'); // lobby | started
-  const [gameStartedAt, setGameStartedAt] = useState(null);
+  const [syncedGameState, setSyncedGameState] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
   const [error, setError] = useState(null);
-  const [isStartingGame, setIsStartingGame] = useState(false);
 
   const activeLobbyRef = useRef({ roomCode: null, inviteToken: null });
   const joinInFlightRef = useRef(false);
+
+  const syncPlayers = useCallback((nextPlayers) => {
+    if (Array.isArray(nextPlayers)) {
+      setPlayers(deduplicatePlayers(nextPlayers));
+    }
+  }, []);
 
   const appendActivity = useCallback((type, message) => {
     setActivityLog((prev) => [createActivityEntry(type, message), ...prev].slice(0, 20));
@@ -102,8 +105,7 @@ export function RoomProvider({ children }) {
         }))
       );
       setLobbyStatus('idle');
-      setGameStatus('lobby');
-      setGameStartedAt(null);
+      setSyncedGameState(null);
       setActivityLog([]);
       return created;
     },
@@ -133,8 +135,7 @@ export function RoomProvider({ children }) {
         }))
       );
       setLobbyStatus('idle');
-      setGameStatus('lobby');
-      setGameStartedAt(null);
+      setSyncedGameState(null);
       setActivityLog([]);
       return joined;
     },
@@ -165,6 +166,7 @@ export function RoomProvider({ children }) {
         });
 
         setPlayers(deduplicatePlayers(result.players));
+        setSyncedGameState(result.gameState ?? null);
         setLobbyStatus('joined');
 
         if (result.reconnected) {
@@ -200,8 +202,7 @@ export function RoomProvider({ children }) {
         setRoom(null);
         setPlayers([]);
         setLobbyStatus('idle');
-        setGameStatus('lobby');
-        setGameStartedAt(null);
+        setSyncedGameState(null);
         setActivityLog([]);
         setError(null);
       }
@@ -209,37 +210,13 @@ export function RoomProvider({ children }) {
     [socket]
   );
 
-  const startGame = useCallback(async () => {
-    setIsStartingGame(true);
-    setError(null);
-    try {
-      const result = await startGameSocket();
-      setGameStatus('started');
-      setGameStartedAt(result.startedAt || new Date().toISOString());
-      if (Array.isArray(result.players)) {
-        setPlayers(deduplicatePlayers(result.players));
-      }
-      return result;
-    } catch (err) {
-      const normalized = {
-        code: err?.code || 'GAME_START_FAILED',
-        message: err?.message || 'Unable to start the game',
-      };
-      setError(normalized);
-      throw normalized;
-    } finally {
-      setIsStartingGame(false);
-    }
-  }, []);
-
   const clearRoomState = useCallback(() => {
     activeLobbyRef.current = { roomCode: null, inviteToken: null };
     clearStoredRoomSession();
     setRoom(null);
     setPlayers([]);
     setLobbyStatus('idle');
-    setGameStatus('lobby');
-    setGameStartedAt(null);
+    setSyncedGameState(null);
     setActivityLog([]);
     setError(null);
   }, []);
@@ -281,15 +258,6 @@ export function RoomProvider({ children }) {
       }
     };
 
-    const handleGameStart = (event) => {
-      if (Array.isArray(event?.players)) {
-        setPlayers(deduplicatePlayers(event.players));
-      }
-      setGameStatus('started');
-      setGameStartedAt(event?.startedAt || new Date().toISOString());
-      appendActivity('start', 'Host started the game!');
-    };
-
     const handleLobbyError = (err) => {
       setError({
         code: err?.code || 'LOBBY_ERROR',
@@ -299,13 +267,11 @@ export function RoomProvider({ children }) {
 
     socket.on('player_joined', handlePlayerJoined);
     socket.on('player_left', handlePlayerLeft);
-    socket.on('game_start', handleGameStart);
     socket.on('lobby_error', handleLobbyError);
 
     return () => {
       socket.off('player_joined', handlePlayerJoined);
       socket.off('player_left', handlePlayerLeft);
-      socket.off('game_start', handleGameStart);
       socket.off('lobby_error', handleLobbyError);
     };
   }, [socket, appendActivity]);
@@ -350,18 +316,16 @@ export function RoomProvider({ children }) {
       isHost,
       connectedPlayersCount,
       lobbyStatus,
+      syncedGameState,
       socketStatus,
       isSocketConnected: isConnected,
-      gameStatus,
-      gameStartedAt,
-      isStartingGame,
       activityLog,
       error,
       createRoom,
       joinRoom,
       connectToLobby,
       leaveLobby,
-      startGame,
+      syncPlayers,
       clearRoomState,
       clearError,
     }),
@@ -372,18 +336,16 @@ export function RoomProvider({ children }) {
       isHost,
       connectedPlayersCount,
       lobbyStatus,
+      syncedGameState,
       socketStatus,
       isConnected,
-      gameStatus,
-      gameStartedAt,
-      isStartingGame,
       activityLog,
       error,
       createRoom,
       joinRoom,
       connectToLobby,
       leaveLobby,
-      startGame,
+      syncPlayers,
       clearRoomState,
       clearError,
     ]

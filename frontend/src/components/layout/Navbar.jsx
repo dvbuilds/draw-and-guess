@@ -1,4 +1,5 @@
 import { Link, NavLink } from 'react-router-dom';
+import { useGame } from '../../hooks/useGame.js';
 import { usePlayer } from '../../hooks/usePlayer.js';
 import { useRoom } from '../../hooks/useRoom.js';
 import { useSocket } from '../../hooks/useSocket.js';
@@ -23,6 +24,7 @@ export function Navbar() {
   const { status } = useSocket();
   const { displayName, hasIdentity } = usePlayer();
   const { roomCode } = useRoom();
+  const { status: gameStatus } = useGame();
 
   return (
     <header className="sticky top-0 z-30 border-b-2 border-slate-200 bg-white/90 backdrop-blur-md">
@@ -56,8 +58,17 @@ export function Navbar() {
               Join Room
             </NavLink>
             {roomCode && (
-              <NavLink to={`/lobby/${roomCode}`} className={navLinkClass}>
-                Lobby ({roomCode})
+              <NavLink
+                to={
+                  gameStatus === 'started' || gameStatus === 'completed'
+                    ? `/game/${roomCode}`
+                    : `/lobby/${roomCode}`
+                }
+                className={navLinkClass}
+              >
+                {gameStatus === 'started' || gameStatus === 'completed'
+                  ? `Game (${roomCode})`
+                  : `Lobby (${roomCode})`}
               </NavLink>
             )}
           </nav>

@@ -32,6 +32,11 @@ function formatJoinError(err) {
         code,
         message: 'Your current guest identity is already a member of this room.',
       };
+    case 'GAME_ALREADY_STARTED':
+      return {
+        code,
+        message: 'This match has already started. New players cannot join mid-game.',
+      };
     case 'PLAYER_NAME_TAKEN':
       return {
         code,

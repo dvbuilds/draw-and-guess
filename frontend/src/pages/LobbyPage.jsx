@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { LobbyActivityFeed } from '../components/lobby/LobbyActivityFeed.jsx';
 import { LobbyConnectionBanner } from '../components/lobby/LobbyConnectionBanner.jsx';
@@ -45,6 +45,16 @@ export function LobbyPage() {
   const [leaving, setLeaving] = useState(false);
 
   const effectiveInviteToken = inviteTokenParam || room?.inviteToken || '';
+
+  // Automatically transition from Lobby to Game Screen when game starts
+  useEffect(() => {
+    if ((gameStatus === 'started' || gameStatus === 'completed') && roomCode) {
+      const tokenQuery = effectiveInviteToken
+        ? `?inviteToken=${encodeURIComponent(effectiveInviteToken)}`
+        : '';
+      navigate(`/game/${roomCode}${tokenQuery}`, { replace: true });
+    }
+  }, [gameStatus, roomCode, effectiveInviteToken, navigate]);
   const shareableInviteLink =
     room?.inviteLink ||
     (roomCode

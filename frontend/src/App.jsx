@@ -1,3 +1,4 @@
+import { GameProvider } from './context/GameContext.jsx';
 import { PlayerProvider } from './context/PlayerContext.jsx';
 import { RoomProvider } from './context/RoomContext.jsx';
 import { SocketProvider } from './context/SocketContext.jsx';
@@ -8,7 +9,9 @@ export default function App() {
     <PlayerProvider>
       <SocketProvider>
         <RoomProvider>
-          <AppRouter />
+          <GameProvider>
+            <AppRouter />
+          </GameProvider>
         </RoomProvider>
       </SocketProvider>
     </PlayerProvider>
