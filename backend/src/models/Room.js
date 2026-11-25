@@ -10,6 +10,7 @@ const memberSchema = new mongoose.Schema(
     isConnected: { type: Boolean, default: false },
     socketId: { type: String, default: null },
     lastDisconnectedAt: { type: Date, default: null },
+    score: { type: Number, min: 0, default: 0 },
   },
   { _id: false }
 );
@@ -26,6 +27,10 @@ const roomSchema = new mongoose.Schema(
       hints: { type: Number, min: 0, max: 5, default: 3 },
       hintsEnabled: { type: Boolean, default: true },
       wordMode: { type: String, enum: ['Normal', 'Hidden', 'Combination'], required: true },
+      scoring: {
+        correctGuessPoints: { type: Number, min: 1, max: 1000, default: 100 },
+        drawerPointsPerCorrectGuess: { type: Number, min: 0, max: 1000, default: 50 },
+      },
     },
     hostPlayerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Player', default: null },
     members: { type: [memberSchema], default: [] },
@@ -37,6 +42,18 @@ const roomSchema = new mongoose.Schema(
     currentTurn: { type: Number, default: null },
     turnOrder: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
     currentDrawerPlayerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Player', default: null },
+    roundStatus: { type: String, enum: ['waiting_for_word', 'guessing', 'completed'], default: null },
+    roundCompletedAt: { type: Date, default: null },
+    roundCompletionReason: { type: String, default: null },
+    eligibleGuesserIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
+    correctGuesserIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
+    finalLeaderboard: [{
+      playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
+      displayName: String,
+      score: Number,
+      rank: Number,
+    }],
+    winnerPlayerIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
     wordOptionIds: { type: [mongoose.Schema.Types.ObjectId], ref: 'Word', default: [], select: false },
     currentWordId: { type: mongoose.Schema.Types.ObjectId, ref: 'Word', default: null, select: false },
     currentWordText: { type: String, default: null, select: false },

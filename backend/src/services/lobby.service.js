@@ -186,7 +186,8 @@ export async function leaveLobby({ io, socket, reason = 'left', unexpected = fal
 
   const player = { playerId: session.playerId, displayName: member.displayName };
   let hostTransferredTo = null;
-  if (unexpected) {
+  const retainGameMember = room.gameStatus === 'started';
+  if (unexpected || retainGameMember) {
     member.isConnected = false;
     member.socketId = null;
     member.lastDisconnectedAt = new Date();

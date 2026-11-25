@@ -166,6 +166,13 @@ export async function selectWord({ socket, io, payload }) {
         currentWordText: word.text,
         currentWordCategory: word.category,
         wordOptionIds: [],
+        roundStatus: 'guessing',
+        roundCompletedAt: null,
+        roundCompletionReason: null,
+        eligibleGuesserIds: room.members
+          .filter((item) => item.isConnected && idOf(item.playerId) !== idOf(room.currentDrawerPlayerId))
+          .map((item) => item.playerId),
+        correctGuesserIds: [],
       },
     },
     { new: true }

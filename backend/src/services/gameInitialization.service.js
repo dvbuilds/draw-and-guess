@@ -1,6 +1,7 @@
 import { Room } from '../models/Room.js';
 import { emitWordOptions, prepareWordOptions } from './wordSelection.service.js';
 import { resetRoomDrawing } from './drawing.service.js';
+import { buildLeaderboard, determineWinners, completeRound, removeEligibleGuesser } from './scoring.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const MIN_PLAYERS_TO_START = 2;
@@ -12,6 +13,7 @@ function players(room) {
     displayName: member.displayName,
     role: member.role,
     isConnected: Boolean(member.isConnected),
+    score: Number(member.score ?? 0),
   }));
 }
 
@@ -83,9 +85,16 @@ function nextConnectedTurn(room) {
 
 async function completeGame({ io, room, reason }) {
   const completedAt = new Date();
+  const leaderboard = buildLeaderboard(room);
+  const winners = determineWinners(leaderboard);
   const completed = await Room.findOneAndUpdate(
     stateFilter(room),
-    { $set: { gameStatus: 'completed', gameCompletedAt: completedAt } },
+    { $set: {
+      gameStatus: 'completed',
+      gameCompletedAt: completedAt,
+      finalLeaderboard: leaderboard,
+      winnerPlayerIds: winners.map((winner) => winner.playerId),
+    } },
     { new: true }
   );
   if (!completed) return null;
@@ -94,8 +103,15 @@ async function completeGame({ io, room, reason }) {
     reason,
     completedAt: completed.gameCompletedAt.toISOString(),
     gameState: gameState(completed),
+    leaderboard: completed.finalLeaderboard,
+    winners,
   };
   resetRoomDrawing(completed.code);
+  io.to(completed.code).emit('leaderboard_final', {
+    roomCode: completed.code,
+    leaderboard: completed.finalLeaderboard,
+    winners,
+  });
   io.to(completed.code).emit('game_complete', event);
   return event;
 }
@@ -122,6 +138,11 @@ async function advanceTurn({ io, room, reason }) {
         currentWordId: null,
         currentWordText: null,
         currentWordCategory: null,
+        roundStatus: 'waiting_for_word',
+        roundCompletedAt: null,
+        roundCompletionReason: null,
+        eligibleGuesserIds: [],
+        correctGuesserIds: [],
       },
     },
     { new: true }
@@ -209,6 +230,14 @@ export async function initializeGame({ socket, io }) {
         currentWordId: null,
         currentWordText: null,
         currentWordCategory: null,
+        roundStatus: 'waiting_for_word',
+        roundCompletedAt: null,
+        roundCompletionReason: null,
+        eligibleGuesserIds: [],
+        correctGuesserIds: [],
+        finalLeaderboard: [],
+        winnerPlayerIds: [],
+        'members.$[].score': 0,
       },
     },
     { new: true }
@@ -245,6 +274,11 @@ export async function advanceGameTurn({ socket, io }) {
   if (room.gameStatus !== 'started') {
     throw new ApiError(409, 'The game is not in progress', 'GAME_NOT_STARTED');
   }
+  if (room.roundStatus !== 'completed') {
+    const roundResult = await completeRound({ io, room, reason: 'host_advanced' });
+    if (!roundResult.completed) throw new ApiError(409, 'The round changed; request the current game state and retry', 'GAME_STATE_CHANGED');
+    room.roundStatus = 'completed';
+  }
   const result = await advanceTurn({ io, room, reason: 'host_advanced' });
   if (!result) throw new ApiError(409, 'Game state changed; retry the request', 'GAME_STATE_CHANGED');
   return result;
@@ -257,7 +291,25 @@ export async function handleUnavailablePlayer({ io, roomId, playerId, reason }) 
     return completeGame({ io, room, reason: 'no_connected_players' });
   }
   if (idOf(room.currentDrawerPlayerId) === playerId) {
+    if (room.roundStatus !== 'completed') await completeRound({ io, room, reason: reason || 'drawer_disconnected' });
     return advanceTurn({ io, room, reason: reason || 'drawer_disconnected' });
   }
+  const updated = await removeEligibleGuesser({ room, playerId });
+  if (updated && updated.eligibleGuesserIds.every((id) =>
+    (updated.correctGuesserIds ?? []).some((correctId) => idOf(correctId) === idOf(id)))) {
+    const round = await completeRound({ io, room: updated, reason: 'all_guessed' });
+    if (round.completed) return advanceTurn({ io, room: round.room, reason: 'all_guessed' });
+  }
   return null;
+}
+
+export async function advanceGameForRoom({ io, roomId, reason = 'round_complete' }) {
+  let room = await Room.findById(roomId);
+  if (!room || room.gameStatus !== 'started') return null;
+  if (room.roundStatus !== 'completed') {
+    const round = await completeRound({ io, room, reason });
+    if (!round.completed) return null;
+    room = round.room;
+  }
+  return advanceTurn({ io, room, reason });
 }

@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS = {
   hints: 3,
   hintsEnabled: true,
   wordMode: 'Normal',
+  scoring: { correctGuessPoints: 100, drawerPointsPerCorrectGuess: 50 },
 };
 const WORD_MODES = new Set(['Normal', 'Hidden', 'Combination']);
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -39,6 +40,10 @@ export function validateRoomSettings(input = {}) {
   if (!WORD_MODES.has(wordMode)) {
     throw new ApiError(400, 'wordMode must be Normal, Hidden, or Combination', 'VALIDATION_ERROR');
   }
+  const scoringInput = input.scoring ?? {};
+  if (!scoringInput || typeof scoringInput !== 'object' || Array.isArray(scoringInput)) {
+    throw new ApiError(400, 'scoring must be an object', 'VALIDATION_ERROR');
+  }
   return {
     maxPlayers: validateInteger(input, 'maxPlayers', 2, 20, DEFAULT_SETTINGS.maxPlayers),
     rounds: validateInteger(input, 'rounds', 2, 10, DEFAULT_SETTINGS.rounds),
@@ -47,6 +52,10 @@ export function validateRoomSettings(input = {}) {
     hints,
     hintsEnabled,
     wordMode,
+    scoring: {
+      correctGuessPoints: validateInteger(scoringInput, 'correctGuessPoints', 1, 1000, DEFAULT_SETTINGS.scoring.correctGuessPoints),
+      drawerPointsPerCorrectGuess: validateInteger(scoringInput, 'drawerPointsPerCorrectGuess', 0, 1000, DEFAULT_SETTINGS.scoring.drawerPointsPerCorrectGuess),
+    },
   };
 }
 
@@ -92,6 +101,10 @@ function roomResponse(room, inviteToken) {
       wordChoices: room.settings.wordChoices,
       hints: room.settings.hintsEnabled ? room.settings.hints : 'disabled',
       wordMode: room.settings.wordMode,
+      scoring: {
+        correctGuessPoints: room.settings.scoring.correctGuessPoints,
+        drawerPointsPerCorrectGuess: room.settings.scoring.drawerPointsPerCorrectGuess,
+      },
     },
     hostPlayerId: String(room.hostPlayerId),
     members: room.members.map(({ playerId, displayName, role }) => ({
