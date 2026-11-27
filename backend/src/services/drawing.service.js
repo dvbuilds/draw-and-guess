@@ -6,6 +6,7 @@ const MAX_SEGMENTS_PER_STROKE = 1500;
 const MAX_STROKES_PER_ROOM = 1000;
 const MAX_SEGMENTS_PER_ROOM = 5000;
 const drawingByRoom = new Map();
+const drawingAuthRevisionByRoom = new Map();
 
 const idOf = (value) => String(value);
 
@@ -103,7 +104,31 @@ async function requireRoomMember(socket, { drawerOnly = false } = {}) {
 }
 
 export async function addDrawingSegment({ socket, io, payload }) {
-  const { room } = await requireRoomMember(socket, { drawerOnly: true });
+  const session = socket.data.lobby;
+  const cachedAuth = socket.data.drawingAuth;
+  const revision = cachedAuth ? (drawingAuthRevisionByRoom.get(cachedAuth.roomCode) ?? 0) : -1;
+  let room;
+  if (cachedAuth
+      && cachedAuth.roomId === session?.roomId
+      && cachedAuth.playerId === session?.playerId
+      && cachedAuth.socketId === socket.id
+      && cachedAuth.revision === revision
+      && socket.rooms.has(cachedAuth.roomCode)) {
+    // Drawer identity, active game, selected word, and active socket were
+    // checked from Mongo on the first segment of this turn. Turn transitions
+    // invalidate the revision via resetRoomDrawing().
+    room = { code: cachedAuth.roomCode };
+  } else {
+    const authorized = await requireRoomMember(socket, { drawerOnly: true });
+    room = authorized.room;
+    socket.data.drawingAuth = {
+      roomCode: room.code,
+      roomId: session.roomId,
+      playerId: session.playerId,
+      socketId: socket.id,
+      revision: drawingAuthRevisionByRoom.get(room.code) ?? 0,
+    };
+  }
   const segment = validatePayload(payload);
   let drawing = drawingByRoom.get(room.code);
   let stroke = drawing?.strokes.get(segment.strokeId);
@@ -173,4 +198,5 @@ export async function syncDrawing({ socket }) {
 
 export function resetRoomDrawing(roomCode) {
   drawingByRoom.delete(roomCode);
+  drawingAuthRevisionByRoom.set(roomCode, (drawingAuthRevisionByRoom.get(roomCode) ?? 0) + 1);
 }

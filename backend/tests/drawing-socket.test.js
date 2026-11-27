@@ -26,6 +26,7 @@ let ioServer;
 let serverUrl;
 const clients = [];
 const roomRows = new Map();
+let roomFindByIdCalls = 0;
 
 function makeRoom({ id, code, drawerId, memberIds }) {
   const room = {
@@ -100,6 +101,7 @@ before(async () => {
     select: async () => [...roomRows.values()].find((room) => room.code === code) ?? null,
   });
   Room.findById = (id) => {
+    roomFindByIdCalls += 1;
     const room = roomRows.get(String(id)) ?? null;
     return {
       select: async () => room,
@@ -167,16 +169,72 @@ test('synchronizes strokes, eraser, undo, and clear only inside the room with dr
   await new Promise((resolve) => setTimeout(resolve, 25));
   assert.equal(drawerReceivedEcho, false);
 
+  // Measure the prior acknowledgement-serialized pattern against the current
+  // acknowledgement-free stream across three connected Socket.IO clients.
+  const burstCount = 24;
+  const legacyLatencies = [];
+  const legacyStartedAt = performance.now();
+  for (let segmentIndex = 0; segmentIndex < burstCount; segmentIndex += 1) {
+    const remoteArrival = once(viewer, 'drawing:stroke');
+    const sentAt = performance.now();
+    const result = await emit(drawer, 'drawing:stroke', {
+      ...first,
+      strokeId: 'legacy_001',
+      segmentIndex,
+      points: [{ x: 0.1, y: 0.2 }, { x: 0.2 + segmentIndex / 100, y: 0.3 }],
+    });
+    assert.equal(result.success, true);
+    await remoteArrival;
+    legacyLatencies.push(performance.now() - sentAt);
+  }
+  const legacyElapsed = performance.now() - legacyStartedAt;
+  const legacySorted = [...legacyLatencies].sort((a, b) => a - b);
+
+  const roomReadsBeforeBurst = roomFindByIdCalls;
+  const sentAt = new Map();
+  const burstReceived = [];
+  const burstStartedAt = performance.now();
+  const burstDone = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Timed out waiting for drawing burst')), 2000);
+    const onSegment = (payload) => {
+      if (payload.strokeId !== 'burst_001') return;
+      burstReceived.push({ ...payload, latencyMs: performance.now() - sentAt.get(payload.segmentIndex) });
+      if (burstReceived.length === burstCount) {
+        clearTimeout(timeout);
+        viewer.off('drawing:stroke', onSegment);
+        resolve();
+      }
+    };
+    viewer.on('drawing:stroke', onSegment);
+  });
+  for (let segmentIndex = 0; segmentIndex < burstCount; segmentIndex += 1) {
+    const payload = {
+      ...first,
+      strokeId: 'burst_001',
+      segmentIndex,
+      points: [{ x: 0.1, y: 0.2 }, { x: 0.2 + segmentIndex / 100, y: 0.3 }],
+    };
+    sentAt.set(segmentIndex, performance.now());
+    drawer.emit('drawing:stroke', payload);
+  }
+  await burstDone;
+  const burstElapsed = performance.now() - burstStartedAt;
+  assert.deepEqual(burstReceived.map(({ segmentIndex }) => segmentIndex), Array.from({ length: burstCount }, (_, i) => i));
+  assert.equal(roomFindByIdCalls, roomReadsBeforeBurst, 'authorized stroke stream should not re-read the room for each segment');
+  const sortedLatencies = burstReceived.map(({ latencyMs }) => latencyMs).sort((a, b) => a - b);
+  console.log(`[drawing-latency] ack-serialized ${burstCount} segments: p50=${legacySorted[Math.floor(burstCount * 0.5)].toFixed(1)}ms p95=${legacySorted[Math.floor(burstCount * 0.95)].toFixed(1)}ms total=${legacyElapsed.toFixed(1)}ms`);
+  console.log(`[drawing-latency] ack-free burst ${burstCount} segments (3 clients): p50=${sortedLatencies[Math.floor(burstCount * 0.5)].toFixed(1)}ms p95=${sortedLatencies[Math.floor(burstCount * 0.95)].toFixed(1)}ms total=${burstElapsed.toFixed(1)}ms`);
+
   const sync = await emit(viewer, 'drawing:sync');
   assert.equal(sync.success, true);
-  assert.equal(sync.data.strokes.length, 2);
+  assert.equal(sync.data.strokes.length, burstCount * 2 + 2);
   await new Promise((resolve) => setTimeout(resolve, 25));
   assert.equal(unrelatedRoomReceived, false);
 
   const undoBroadcast = once(viewer, 'drawing:undone');
   const undo = await emit(drawer, 'drawing:undo');
-  assert.deepEqual(undo.data, { undone: true, strokeId: 'stroke_01' });
-  assert.equal((await undoBroadcast).strokeId, 'stroke_01');
+  assert.deepEqual(undo.data, { undone: true, strokeId: 'burst_001' });
+  assert.equal((await undoBroadcast).strokeId, 'burst_001');
 
   const eraser = { ...first, strokeId: 'eraser_01', segmentIndex: 0, tool: 'eraser' };
   const eraserBroadcast = once(viewer, 'drawing:stroke');

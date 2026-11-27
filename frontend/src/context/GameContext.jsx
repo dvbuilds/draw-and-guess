@@ -113,6 +113,8 @@ export function GameProvider({ children }) {
   const lastLogKeyRef = useRef(null);
   const currentTurnKeyRef = useRef(null);
   const previousRoomCodeRef = useRef(roomCode);
+  const drawingSyncInFlightRef = useRef(false);
+  const drawingEventsDuringSyncRef = useRef([]);
 
   const appendLog = useCallback((dedupeKey, type, message) => {
     if (dedupeKey && lastLogKeyRef.current === dedupeKey) return;
@@ -176,13 +178,22 @@ export function GameProvider({ children }) {
   const syncDrawing = useCallback(async () => {
     if (!isConnected) return null;
     setIsSyncingDrawing(true);
+    drawingSyncInFlightRef.current = true;
+    drawingEventsDuringSyncRef.current = [];
     try {
       const res = await syncDrawingSocket();
-      setStrokes(hydrateStrokesFromSync(res?.strokes || []));
+      const eventsDuringSync = drawingEventsDuringSyncRef.current;
+      setStrokes(() => eventsDuringSync.reduce((current, item) => {
+        if (item.type === 'stroke') return applyStrokeSegment(current, item.event);
+        if (item.type === 'undo') return applyUndoStroke(current, item.event.strokeId);
+        return [];
+      }, hydrateStrokesFromSync(res?.strokes || [])));
       return res;
     } catch {
       return null;
     } finally {
+      drawingSyncInFlightRef.current = false;
+      drawingEventsDuringSyncRef.current = [];
       setIsSyncingDrawing(false);
     }
   }, [isConnected]);
@@ -414,15 +425,24 @@ export function GameProvider({ children }) {
 
     const handleDrawingStroke = (event) => {
       if (!event) return;
+      if (drawingSyncInFlightRef.current) {
+        drawingEventsDuringSyncRef.current.push({ type: 'stroke', event });
+      }
       setStrokes((prev) => applyStrokeSegment(prev, event));
     };
 
     const handleDrawingUndone = (event) => {
       if (!event) return;
+      if (drawingSyncInFlightRef.current) {
+        drawingEventsDuringSyncRef.current.push({ type: 'undo', event });
+      }
       setStrokes((prev) => applyUndoStroke(prev, event.strokeId));
     };
 
     const handleDrawingCleared = () => {
+      if (drawingSyncInFlightRef.current) {
+        drawingEventsDuringSyncRef.current.push({ type: 'clear', event: null });
+      }
       setStrokes([]);
     };
 

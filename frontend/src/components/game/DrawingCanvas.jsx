@@ -26,7 +26,7 @@ export function DrawingCanvas({
 
   // Active pointer stroke state
   const activeStrokeRef = useRef(null);
-  const rafRef = useRef(null);
+  const flushTimerRef = useRef(null);
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -120,11 +120,11 @@ export function DrawingCanvas({
   );
 
   const scheduleFlush = useCallback(() => {
-    if (rafRef.current !== null) return;
-    rafRef.current = window.requestAnimationFrame(() => {
-      rafRef.current = null;
+    if (flushTimerRef.current !== null) return;
+    flushTimerRef.current = window.setTimeout(() => {
+      flushTimerRef.current = null;
       flushSegments(false);
-    });
+    }, 25);
   }, [flushSegments]);
 
   useEffect(() => {
@@ -145,8 +145,8 @@ export function DrawingCanvas({
 
   useEffect(() => {
     return () => {
-      if (rafRef.current !== null) {
-        window.cancelAnimationFrame(rafRef.current);
+      if (flushTimerRef.current !== null) {
+        window.clearTimeout(flushTimerRef.current);
       }
     };
   }, []);
@@ -191,6 +191,10 @@ export function DrawingCanvas({
 
     active.pendingPoints.push(nextPoint);
     if (active.pendingPoints.length >= MAX_POINTS_PER_SEGMENT) {
+      if (flushTimerRef.current !== null) {
+        window.clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
       flushSegments(false);
     } else {
       scheduleFlush();
@@ -201,9 +205,9 @@ export function DrawingCanvas({
     const active = activeStrokeRef.current;
     if (!active || active.pointerId !== e.pointerId) return;
 
-    if (rafRef.current !== null) {
-      window.cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
+    if (flushTimerRef.current !== null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
     }
 
     if (e.type === 'pointerup' && canDraw) {
