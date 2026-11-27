@@ -63,7 +63,7 @@ export function Navbar() {
             </span>
             <div className="min-w-0 leading-tight">
               <span className="block truncate text-sm font-black tracking-tight text-slate-900 sm:text-lg">
-                Draw &amp; Guess
+                DoodleDash
               </span>
               <span className="hidden text-[11px] font-medium text-slate-500 lg:block">
                 {t.appTagline}
