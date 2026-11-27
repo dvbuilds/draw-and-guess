@@ -1,6 +1,5 @@
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { SketchPartyIllustration } from '../components/home/SketchPartyIllustration.jsx';
-import { PlayerIdentityCard } from '../components/player/PlayerIdentityCard.jsx';
 import { Badge, Button, Card } from '../components/ui/index.js';
 
 const PALETTE_SWATCHES = [
@@ -47,9 +46,9 @@ export function HomePage() {
 
   return (
     <div className="space-y-8 sm:space-y-10">
-      {/* Hero Banner + Player Welcome Card */}
-      <section className="grid gap-6 lg:grid-cols-12 lg:items-start">
-        <div className="min-w-0 space-y-5 lg:col-span-7">
+      {/* Hero Banner + Animated Sketch Illustration */}
+      <section className="grid gap-8 lg:grid-cols-12 lg:items-center">
+        <div className="min-w-0 space-y-5 lg:col-span-6">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="amber">Sketch &amp; Guess Party Game</Badge>
             <Badge variant="indigo">Play Instantly · No Sign-up</Badge>
@@ -94,14 +93,11 @@ export function HomePage() {
               ))}
             </div>
           </div>
-
-          {/* Playful Cartoon Game Illustration */}
-          <SketchPartyIllustration />
         </div>
 
-        {/* Friendly Player Welcome / Nickname Card */}
-        <div className="min-w-0 lg:col-span-5">
-          <PlayerIdentityCard showQuickActions />
+        {/* Playful Cartoon Game Illustration */}
+        <div className="min-w-0 lg:col-span-6">
+          <SketchPartyIllustration />
         </div>
       </section>
 
