@@ -176,8 +176,10 @@ test('synchronizes multiple socket members, leaves, reconnects, transfers host, 
   const replacementGuest = await connectClient();
   const replacementJoin = await request(replacementGuest, 'lobby:join', payload(1));
   assert.equal(replacementJoin.success, true);
+  assert.equal(replacementJoin.data.reconnected, true);
   assert.equal(guest.connected, false);
   assert.equal(room.members.find((member) => member.playerId === players[1].id).socketId, replacementGuest.id);
+  assert.equal(room.members.filter((member) => member.playerId === players[1].id).length, 1);
   guest = replacementGuest;
 
   const unauthorizedStart = await request(guest, 'game:start');
@@ -197,17 +199,17 @@ test('synchronizes multiple socket members, leaves, reconnects, transfers host, 
 
   const temporary = await connectClient();
   assert.equal((await request(temporary, 'lobby:join', payload(2))).success, true);
-  const disconnectedEvent = waitForEvent(host, 'player_left');
   temporary.disconnect();
-  const disconnected = await disconnectedEvent;
-  assert.equal(disconnected.unexpected, true);
-  assert.equal(room.members.find((member) => member.playerId === players[2].id).isConnected, false);
-
-  const reconnected = await connectClient();
+  // Race the old socket's disconnect cleanup against its replacement join.
+  let reconnected = await connectClient();
   const reconnectResponse = await request(reconnected, 'lobby:join', payload(2));
   assert.equal(reconnectResponse.success, true);
   assert.equal(reconnectResponse.data.reconnected, true);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const reconnectedMember = room.members.find((member) => member.playerId === players[2].id);
   assert.equal(room.members.filter((member) => member.playerId === players[2].id).length, 1);
+  assert.equal(reconnectedMember.isConnected, true);
+  assert.equal(reconnectedMember.socketId, reconnected.id);
 
   const hostLeftEvent = waitForEvent(other, 'player_left');
   const hostLeave = await request(host, 'lobby:leave', { reason: 'host_left' });
@@ -251,6 +253,24 @@ test('synchronizes multiple socket members, leaves, reconnects, transfers host, 
   assert.equal(publicWord.safeHints.category, options.options[0].category);
   assert.equal((await selectedPrivate).word, options.options[0].word);
   assert.equal(room.currentWordText, options.options[0].word);
+
+  // A page refresh closes the transport; keep the active turn intact during
+  // the reconnect grace window and restore the same member on the new socket.
+  const drawerDisconnected = waitForEvent(other, 'player_left');
+  reconnected.io.engine.close();
+  assert.equal((await drawerDisconnected).unexpected, true);
+  assert.equal(room.currentDrawerPlayerId, players[2].id);
+  assert.equal(room.currentTurn, 1);
+  assert.equal(room.roundStatus, 'guessing');
+  const refreshedDrawer = await connectClient();
+  const refreshedJoin = await request(refreshedDrawer, 'lobby:join', payload(2));
+  assert.equal(refreshedJoin.success, true);
+  assert.equal(refreshedJoin.data.reconnected, true);
+  assert.equal(room.currentDrawerPlayerId, players[2].id);
+  assert.equal(room.hostPlayerId, players[2].id);
+  assert.equal(room.members.find((member) => member.playerId === players[2].id).role, 'host');
+  assert.equal(room.members.filter((member) => member.playerId === players[2].id).length, 1);
+  reconnected = refreshedDrawer;
 
   const duplicateStart = await request(reconnected, 'game:start');
   assert.equal(duplicateStart.error.code, 'GAME_ALREADY_STARTED');

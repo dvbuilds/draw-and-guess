@@ -145,7 +145,7 @@ test('creates public and private rooms, validates settings, and assigns creator 
   }
 });
 
-test('joins by code and rejects invalid, private, duplicate, same-name, and full-room joins', async () => {
+test('joins by code, restores the same room member, and rejects invalid, same-name, and full-room joins', async () => {
   const create = async (settings = {}, isPublic = true) => {
     const response = await post('/', { ...identity(), settings, isPublic });
     return (await response.json()).data;
@@ -179,8 +179,21 @@ test('joins by code and rejects invalid, private, duplicate, same-name, and full
     ...identity('222222222222222222222222', 'guest-secret'), roomCode: privateRoom.roomCode,
     inviteToken: privateRoom.inviteToken,
   });
-  assert.equal(duplicate.status, 409);
-  assert.equal((await duplicate.json()).error.code, 'ALREADY_IN_ROOM');
+  assert.equal(duplicate.status, 200);
+  assert.equal((await duplicate.json()).data.members.length, 2);
+  assert.equal(rooms.get(privateRoom.roomId).members.length, 2);
+  rooms.get(privateRoom.roomId).gameStatus = 'started';
+  const sameMemberDuringGame = await post('/join', {
+    ...identity('222222222222222222222222', 'guest-secret'), roomCode: privateRoom.roomCode,
+    inviteToken: privateRoom.inviteToken,
+  });
+  assert.equal(sameMemberDuringGame.status, 200);
+  const newPlayerDuringGame = await post('/join', {
+    ...identity('444444444444444444444444', 'third-secret'), roomCode: privateRoom.roomCode,
+    inviteToken: privateRoom.inviteToken,
+  });
+  assert.equal(newPlayerDuringGame.status, 409);
+  assert.equal((await newPlayerDuringGame.json()).error.code, 'GAME_ALREADY_STARTED');
 
   const sameNameRoom = await create();
   const sameName = await post('/join', {

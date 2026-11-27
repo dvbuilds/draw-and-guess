@@ -78,6 +78,7 @@ export function RoomProvider({ children }) {
 
   const activeLobbyRef = useRef({ roomCode: null, inviteToken: null });
   const joinInFlightRef = useRef(false);
+  const pendingReconnectRef = useRef(null);
 
   const syncPlayers = useCallback((nextPlayers) => {
     if (Array.isArray(nextPlayers)) {
@@ -109,6 +110,7 @@ export function RoomProvider({ children }) {
       if (activeLobbyRef.current.roomCode && socket.connected) {
         await leaveLobbySocket('switched_room').catch(() => {});
       }
+      pendingReconnectRef.current = null;
       activeLobbyRef.current = { roomCode: null, inviteToken: null };
       const created = await createRoomApi({
         playerId,
@@ -150,6 +152,7 @@ export function RoomProvider({ children }) {
       if (activeLobbyRef.current.roomCode && socket.connected) {
         await leaveLobbySocket('switched_room').catch(() => {});
       }
+      pendingReconnectRef.current = null;
       activeLobbyRef.current = { roomCode: null, inviteToken: null };
       const joined = await joinRoomApi({
         playerId,
@@ -225,7 +228,9 @@ export function RoomProvider({ children }) {
 
         return result;
       } catch (err) {
-        activeLobbyRef.current = { roomCode: null, inviteToken: null };
+        if (pendingReconnectRef.current?.roomCode !== targetCode) {
+          activeLobbyRef.current = { roomCode: null, inviteToken: null };
+        }
         setJoinedRoomCode(null);
         setLobbyStatus('error');
         setError({
@@ -235,6 +240,13 @@ export function RoomProvider({ children }) {
         throw err;
       } finally {
         joinInFlightRef.current = false;
+        const pendingReconnect = pendingReconnectRef.current;
+        pendingReconnectRef.current = null;
+        if (pendingReconnect
+            && socket.connected
+            && activeLobbyRef.current.roomCode === pendingReconnect.roomCode) {
+          Promise.resolve().then(() => connectToLobby(pendingReconnect)).catch(() => {});
+        }
       }
     },
     [room, playerId, identityToken, socket, appendActivity]
@@ -242,6 +254,7 @@ export function RoomProvider({ children }) {
 
   const leaveLobby = useCallback(
     async (reason = 'user_left') => {
+      pendingReconnectRef.current = null;
       activeLobbyRef.current = { roomCode: null, inviteToken: null };
       try {
         if (socket.connected) {
@@ -274,6 +287,7 @@ export function RoomProvider({ children }) {
   );
 
   const clearRoomState = useCallback(() => {
+    pendingReconnectRef.current = null;
     activeLobbyRef.current = { roomCode: null, inviteToken: null };
     clearStoredRoomSession();
     setRoom(null);
@@ -449,6 +463,15 @@ export function RoomProvider({ children }) {
       }
     };
 
+    const handleRoomMembersUpdated = (event) => {
+      if (Array.isArray(event?.players)) {
+        setPlayers(deduplicatePlayers(event.players));
+      }
+      if (event?.hostTransferredTo?.displayName) {
+        appendActivity('host', `Host role transferred to ${event.hostTransferredTo.displayName}`);
+      }
+    };
+
     const handleLobbyError = (err) => {
       setError({
         code: err?.code || 'LOBBY_ERROR',
@@ -510,6 +533,7 @@ export function RoomProvider({ children }) {
     };
 
     const handleModerationRemoved = (event) => {
+      pendingReconnectRef.current = null;
       activeLobbyRef.current = { roomCode: null, inviteToken: null };
       clearStoredRoomSession();
       setRoom(null);
@@ -575,6 +599,7 @@ export function RoomProvider({ children }) {
 
     socket.on('player_joined', handlePlayerJoined);
     socket.on('player_left', handlePlayerLeft);
+    socket.on('room:members_updated', handleRoomMembersUpdated);
     socket.on('lobby_error', handleLobbyError);
     socket.on('chat:message', handleChatMessage);
     socket.on('room:announcement', handleAnnouncement);
@@ -588,6 +613,7 @@ export function RoomProvider({ children }) {
     return () => {
       socket.off('player_joined', handlePlayerJoined);
       socket.off('player_left', handlePlayerLeft);
+      socket.off('room:members_updated', handleRoomMembersUpdated);
       socket.off('lobby_error', handleLobbyError);
       socket.off('chat:message', handleChatMessage);
       socket.off('room:announcement', handleAnnouncement);
@@ -605,6 +631,10 @@ export function RoomProvider({ children }) {
     const handleConnect = () => {
       const { roomCode, inviteToken } = activeLobbyRef.current;
       if (roomCode && playerId && identityToken) {
+        if (joinInFlightRef.current) {
+          pendingReconnectRef.current = { roomCode, inviteToken };
+          return;
+        }
         connectToLobby({ roomCode, inviteToken }).catch(() => {});
       }
     };

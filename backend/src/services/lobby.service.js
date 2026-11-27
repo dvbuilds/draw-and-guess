@@ -7,6 +7,8 @@ import { deliverWordStateToDrawer } from './wordSelection.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const membershipLocks = new Map();
+const pendingDisconnects = new Map();
+const RECONNECT_GRACE_MS = 10_000;
 
 async function withMembershipLock(key, action) {
   const previous = membershipLocks.get(key) ?? Promise.resolve();
@@ -37,6 +39,46 @@ function roster(room) {
 
 function findMember(room, playerId) {
   return room.members.find((member) => playerIdOf(member.playerId) === playerId);
+}
+
+function disconnectKey(roomCode, playerId) {
+  return `${roomCode}:${playerId.toLowerCase()}`;
+}
+
+function cancelPendingDisconnect(roomCode, playerId) {
+  const key = disconnectKey(roomCode, playerId);
+  const timer = pendingDisconnects.get(key);
+  if (timer) clearTimeout(timer);
+  pendingDisconnects.delete(key);
+}
+
+function deferUnavailablePlayer({ io, roomId, roomCode, playerId }) {
+  const key = disconnectKey(roomCode, playerId);
+  cancelPendingDisconnect(roomCode, playerId);
+  const timer = setTimeout(() => {
+    pendingDisconnects.delete(key);
+    withMembershipLock(key, async () => {
+      const room = await Room.findById(roomId);
+      const member = room && findMember(room, playerId);
+      if (!room || !member || member.isConnected || member.socketId) return null;
+      let hostTransferredTo = null;
+      if (playerIdOf(room.hostPlayerId) === playerId) {
+        hostTransferredTo = assignNextHost(room, playerId);
+        await room.save();
+        io.to(roomCode).emit('room:members_updated', {
+          roomCode,
+          players: roster(room),
+          hostTransferredTo,
+        });
+      }
+      if (room.gameStatus === 'started') {
+        return handleUnavailablePlayer({ io, roomId, playerId, reason: 'drawer_disconnected' });
+      }
+      return null;
+    }).catch((err) => console.error('[lobby] deferred disconnect handling failed:', err));
+  }, RECONNECT_GRACE_MS);
+  timer.unref?.();
+  pendingDisconnects.set(key, timer);
 }
 
 function assignNextHost(room, leavingPlayerId) {
@@ -107,6 +149,7 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
   }
   if (socket.data.lobby?.roomId === String(room._id)
       && socket.data.lobby.playerId === playerId) {
+    cancelPendingDisconnect(roomCode, playerId);
     if (room.gameStatus === 'started' && playerId === playerIdOf(room.currentDrawerPlayerId)) {
       await deliverWordStateToDrawer({ io, room, socket });
     }
@@ -114,6 +157,7 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
   }
 
   const reconnected = Boolean(member.lastDisconnectedAt || member.isConnected);
+  cancelPendingDisconnect(roomCode, playerId);
   const previousSocketId = member.socketId;
   member.isConnected = true;
   member.socketId = socket.id;
@@ -167,7 +211,15 @@ async function joinLobbyLocked({ socket, io, payload, roomCode }) {
   };
 }
 
-export async function leaveLobby({ io, socket, reason = 'left', unexpected = false }) {
+export async function leaveLobby(options) {
+  const { socket } = options;
+  const session = socket.data.lobby;
+  if (!session) return { left: false };
+  const key = `${session.roomCode}:${session.playerId.toLowerCase()}`;
+  return withMembershipLock(key, () => leaveLobbyLocked(options));
+}
+
+async function leaveLobbyLocked({ io, socket, reason = 'left', unexpected = false }) {
   const session = socket.data.lobby;
   if (!session) return { left: false };
 
@@ -187,11 +239,15 @@ export async function leaveLobby({ io, socket, reason = 'left', unexpected = fal
   const player = { playerId: session.playerId, displayName: member.displayName };
   let hostTransferredTo = null;
   const retainGameMember = room.gameStatus === 'started';
+  const temporaryTransportDrop = unexpected
+    && ['transport close', 'transport error', 'ping timeout'].includes(reason);
   if (unexpected || retainGameMember) {
     member.isConnected = false;
     member.socketId = null;
     member.lastDisconnectedAt = new Date();
-    hostTransferredTo = assignNextHost(room, session.playerId);
+    if (!temporaryTransportDrop) {
+      hostTransferredTo = assignNextHost(room, session.playerId);
+    }
   } else {
     room.members = room.members.filter((item) => playerIdOf(item.playerId) !== session.playerId);
     hostTransferredTo = assignNextHost(room, session.playerId);
@@ -208,7 +264,14 @@ export async function leaveLobby({ io, socket, reason = 'left', unexpected = fal
   };
   io.to(session.roomCode).emit('player_left', event);
   if (!unexpected) await socket.leave(session.roomCode);
-  if (room.gameStatus === 'started') {
+  if (temporaryTransportDrop) {
+    deferUnavailablePlayer({
+      io,
+      roomId: room._id,
+      roomCode: room.code,
+      playerId: session.playerId,
+    });
+  } else if (room.gameStatus === 'started') {
     await handleUnavailablePlayer({
       io,
       roomId: room._id,

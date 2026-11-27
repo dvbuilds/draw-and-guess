@@ -194,16 +194,23 @@ export async function joinRoom(input = {}) {
   if (!validateRoomInvitation(room, inviteToken)) {
     throw new ApiError(403, 'A valid invite token is required for this private room', 'PRIVATE_ROOM');
   }
-  if (room.gameStatus && room.gameStatus !== 'lobby') {
-    throw new ApiError(409, 'Players cannot join after the game has started', 'GAME_ALREADY_STARTED');
-  }
-
   const playerId = String(player._id);
   if ((room.bannedPlayerIds ?? []).some((id) => String(id) === playerId)) {
     throw new ApiError(403, 'This player is banned from the room', 'PLAYER_BANNED');
   }
   const existing = room.members.find((member) => String(member.playerId) === playerId);
-  if (existing) throw new ApiError(409, 'Player is already a member of this room', 'ALREADY_IN_ROOM');
+  if (existing) {
+    if (room.gameStatus === 'started'
+        && (room.kickedPlayerIds ?? []).some((id) => String(id) === playerId)) {
+      throw new ApiError(403, 'This player was kicked from the active game', 'PLAYER_KICKED');
+    }
+    // Membership is unique by playerId. A repeat join from the authenticated
+    // identity restores the room session instead of appending a second member.
+    return roomResponse(room, inviteToken);
+  }
+  if (room.gameStatus && room.gameStatus !== 'lobby') {
+    throw new ApiError(409, 'Players cannot join after the game has started', 'GAME_ALREADY_STARTED');
+  }
   const normalizedDisplayName = normalizeName(player.displayName);
   if (room.members.some((member) => member.normalizedDisplayName === normalizedDisplayName)) {
     throw new ApiError(409, 'That display name is already in use in this room', 'PLAYER_NAME_TAKEN');
@@ -225,7 +232,7 @@ export async function joinRoom(input = {}) {
   if (!updatedRoom) {
     const current = await Room.findById(room._id);
     if (current?.members.some((member) => String(member.playerId) === playerId)) {
-      throw new ApiError(409, 'Player is already a member of this room', 'ALREADY_IN_ROOM');
+      return roomResponse(current, inviteToken);
     }
     if (current?.members.some((member) => member.normalizedDisplayName === normalizedDisplayName)) {
       throw new ApiError(409, 'That display name is already in use in this room', 'PLAYER_NAME_TAKEN');
