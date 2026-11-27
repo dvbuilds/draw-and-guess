@@ -19,8 +19,7 @@ export function LobbyHostControls({
           <Badge variant="emerald">In Progress</Badge>
         </div>
         <p className="text-xs text-emerald-800">
-          The host started the match! Phase 5 will transition players to the live drawing canvas
-          and word-guessing screen.
+          The host started the match! Entering the live drawing canvas...
         </p>
       </Card>
     );

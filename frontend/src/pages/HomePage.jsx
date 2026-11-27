@@ -1,10 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
+import { SketchPartyIllustration } from '../components/home/SketchPartyIllustration.jsx';
 import { PlayerIdentityCard } from '../components/player/PlayerIdentityCard.jsx';
-import { Badge, Button, Card, StatusIndicator } from '../components/ui/index.js';
-import { env } from '../config/env.js';
-import { useSocket } from '../hooks/useSocket.js';
-import { getHealthStatus } from '../services/healthService.js';
+import { Badge, Button, Card } from '../components/ui/index.js';
 
 const PALETTE_SWATCHES = [
   'bg-rose-500',
@@ -44,102 +41,47 @@ export function HomePage() {
   const inviteParams = new URLSearchParams(location.search);
   const invitedRoomCode = inviteParams.get('roomCode');
 
-  const { status: socketStatus, isConnected, socketId, error: socketError, connect, disconnect, ping } =
-    useSocket();
-
-  const [health, setHealth] = useState(null);
-  const [healthLoading, setHealthLoading] = useState(false);
-  const [healthError, setHealthError] = useState(null);
-
-  const [pingResult, setPingResult] = useState(null);
-  const [pingLoading, setPingLoading] = useState(false);
-  const [pingError, setPingError] = useState(null);
-
-  const checkHealth = useCallback(async () => {
-    setHealthLoading(true);
-    setHealthError(null);
-    try {
-      const data = await getHealthStatus();
-      setHealth(data);
-    } catch (err) {
-      setHealth(null);
-      setHealthError(err?.message || 'Health check failed');
-    } finally {
-      setHealthLoading(false);
-    }
-  }, []);
-
-  const handlePing = useCallback(async () => {
-    setPingLoading(true);
-    setPingError(null);
-    const startedAt = performance.now();
-    try {
-      const data = await ping();
-      const latencyMs = Math.round(performance.now() - startedAt);
-      setPingResult({ ...data, latencyMs });
-    } catch (err) {
-      setPingResult(null);
-      setPingError(err?.message || 'Ping failed');
-    } finally {
-      setPingLoading(false);
-    }
-  }, [ping]);
-
-  useEffect(() => {
-    if (!invitedRoomCode) {
-      checkHealth();
-    }
-  }, [checkHealth, invitedRoomCode]);
-
   if (invitedRoomCode) {
     return <Navigate to={`/join${location.search}`} replace />;
   }
 
-  const apiIndicatorState = healthLoading
-    ? 'connecting'
-    : health
-      ? 'connected'
-      : healthError
-        ? 'error'
-        : 'disconnected';
-
   return (
-    <div className="space-y-10">
-      {/* Hero Banner + Player Identity Entry */}
+    <div className="space-y-8 sm:space-y-10">
+      {/* Hero Banner + Player Welcome Card */}
       <section className="grid gap-6 lg:grid-cols-12 lg:items-start">
-        <div className="space-y-5 lg:col-span-7">
+        <div className="min-w-0 space-y-5 lg:col-span-7">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="amber">Sketch &amp; Guess Party Game</Badge>
-            <Badge variant="slate">Room Management Ready</Badge>
+            <Badge variant="indigo">Play Instantly · No Sign-up</Badge>
           </div>
 
-          <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
+          <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-5xl">
             Draw fast.{' '}
             <span className="text-indigo-600 underline decoration-amber-400 decoration-4 underline-offset-4">
               Guess faster.
             </span>
           </h1>
 
-          <p className="max-w-xl text-base leading-relaxed text-slate-600 sm:text-lg">
-            Pick a guest nickname, then create a custom public or private room or join
-            friends using an 8-character room code or invite link.
+          <p className="max-w-xl text-sm leading-relaxed text-slate-600 sm:text-lg">
+            Pick a guest nickname, create a custom public or private room, and challenge friends
+            with live drawing, progressive hints, and fast-paced chat guessing.
           </p>
 
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <Link to="/create">
-              <Button variant="primary" size="lg">
+          <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:items-center">
+            <Link to="/create" className="w-full sm:w-auto">
+              <Button variant="primary" size="lg" className="w-full sm:w-auto">
                 Create a Room
               </Button>
             </Link>
-            <Link to="/join">
-              <Button variant="secondary" size="lg">
+            <Link to="/join" className="w-full sm:w-auto">
+              <Button variant="secondary" size="lg" className="w-full sm:w-auto">
                 Join with Code
               </Button>
             </Link>
           </div>
 
-          {/* Decorative Color Swatches */}
-          <div className="flex items-center gap-2 pt-1">
+          {/* Studio Palette Preview */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Studio Palette
             </span>
@@ -153,129 +95,26 @@ export function HomePage() {
             </div>
           </div>
 
-          {/* Live Connection Diagnostics Card */}
-          <Card className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-              <div>
-                <h2 className="text-sm font-extrabold text-slate-900">
-                  Backend Connection
-                </h2>
-                <p className="text-xs text-slate-500">
-                  REST &amp; Socket.IO diagnostics
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={checkHealth} disabled={healthLoading}>
-                  {healthLoading ? 'Checking...' : 'Check Health'}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handlePing}
-                  disabled={!isConnected || pingLoading}
-                >
-                  {pingLoading ? 'Pinging...' : 'Socket Ping'}
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {/* REST /api/health Status */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                    GET /api/health
-                  </span>
-                  <StatusIndicator
-                    state={apiIndicatorState}
-                    label={
-                      healthLoading
-                        ? 'Checking'
-                        : health
-                          ? 'Healthy'
-                          : healthError
-                            ? 'Unreachable'
-                            : 'Idle'
-                    }
-                  />
-                </div>
-
-                {health ? (
-                  <dl className="grid grid-cols-2 gap-2 text-xs text-slate-600">
-                    <div>
-                      <dt className="text-slate-400">Database</dt>
-                      <dd className="font-semibold capitalize text-slate-800">{health.db}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-400">Uptime</dt>
-                      <dd className="font-semibold text-slate-800">{health.uptime}s</dd>
-                    </div>
-                  </dl>
-                ) : (
-                  <p className="text-xs text-rose-600">
-                    {healthError || `Waiting for ${env.API_BASE_URL}`}
-                  </p>
-                )}
-              </div>
-
-              {/* Socket.IO Status */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                    Socket.IO
-                  </span>
-                  <StatusIndicator state={socketStatus} label={socketStatus} />
-                </div>
-
-                <div className="text-xs text-slate-600 space-y-1">
-                  <p className="truncate">
-                    <span className="text-slate-400">ID: </span>
-                    <span className="font-mono font-semibold text-slate-800">
-                      {socketId || '—'}
-                    </span>
-                  </p>
-                  {pingResult && (
-                    <p className="text-emerald-700 font-medium">
-                      Ack: &ldquo;{pingResult.message}&rdquo; ({pingResult.latencyMs}ms)
-                    </p>
-                  )}
-                  {(pingError || socketError) && (
-                    <p className="text-rose-600">{pingError || socketError}</p>
-                  )}
-                </div>
-
-                <div>
-                  {isConnected ? (
-                    <Button variant="ghost" size="sm" onClick={disconnect} className="px-2 py-1">
-                      Disconnect
-                    </Button>
-                  ) : (
-                    <Button variant="ghost" size="sm" onClick={connect} className="px-2 py-1">
-                      Reconnect
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </Card>
+          {/* Playful Cartoon Game Illustration */}
+          <SketchPartyIllustration />
         </div>
 
-        {/* Guest Player Identity Card */}
-        <div className="lg:col-span-5">
-          <PlayerIdentityCard />
+        {/* Friendly Player Welcome / Nickname Card */}
+        <div className="min-w-0 lg:col-span-5">
+          <PlayerIdentityCard showQuickActions />
         </div>
       </section>
 
-      {/* Game Flow Preview (Static UI Only) */}
+      {/* How Draw & Guess Works */}
       <section className="space-y-4">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-xl font-extrabold text-slate-900">How Draw &amp; Guess Works</h2>
             <p className="text-sm text-slate-500">
-              Upcoming lobby and gameplay modules will build on your guest identity.
+              Jump into a round in seconds — customize categories, languages, timers, and hints.
             </p>
           </div>
-          <Badge variant="slate">Rooms &amp; Canvas coming in Phase 3+</Badge>
+          <Badge variant="emerald">Lobby, Canvas &amp; Chat Ready</Badge>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

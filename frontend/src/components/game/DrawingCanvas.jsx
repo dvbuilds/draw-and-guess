@@ -26,7 +26,6 @@ export function DrawingCanvas({
 
   // Active pointer stroke state
   const activeStrokeRef = useRef(null);
-  const emitChainRef = useRef(Promise.resolve());
   const rafRef = useRef(null);
 
   const redraw = useCallback(() => {
@@ -106,9 +105,7 @@ export function DrawingCanvas({
 
         active.segmentIndex += 1;
         onStrokeSegment?.(segment);
-        emitChainRef.current = emitChainRef.current
-          .then(() => onEmitSegment?.(segment))
-          .catch(() => {});
+        onEmitSegment?.(segment);
 
         if (remaining.length >= 2) {
           pts.splice(0, pts.length, ...remaining);
@@ -129,6 +126,22 @@ export function DrawingCanvas({
       flushSegments(false);
     });
   }, [flushSegments]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !canDraw) return undefined;
+
+    const preventTouchScroll = (event) => {
+      event.preventDefault();
+    };
+
+    canvas.addEventListener('touchstart', preventTouchScroll, { passive: false });
+    canvas.addEventListener('touchmove', preventTouchScroll, { passive: false });
+    return () => {
+      canvas.removeEventListener('touchstart', preventTouchScroll);
+      canvas.removeEventListener('touchmove', preventTouchScroll);
+    };
+  }, [canDraw]);
 
   useEffect(() => {
     return () => {
@@ -213,7 +226,7 @@ export function DrawingCanvas({
   return (
     <div
       ref={containerRef}
-      className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-inner"
+      className="relative aspect-[4/3] w-full max-h-[65vh] overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-inner"
     >
       <canvas
         ref={canvasRef}
@@ -221,8 +234,9 @@ export function DrawingCanvas({
         onPointerMove={handlePointerMove}
         onPointerUp={finishStroke}
         onPointerCancel={finishStroke}
-        className={`block h-full w-full touch-none select-none ${
-          canDraw ? 'cursor-crosshair' : 'cursor-default'
+        style={{ touchAction: canDraw ? 'none' : 'pan-y' }}
+        className={`block h-full w-full select-none ${
+          canDraw ? 'touch-none overscroll-none cursor-crosshair' : 'cursor-default'
         }`}
       />
 

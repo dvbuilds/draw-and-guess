@@ -146,7 +146,7 @@ export function GamePage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="indigo">Phase 5 · Game Screen</Badge>
+            <Badge variant="indigo">Live Match</Badge>
             {room && (
               <Badge variant={room.isPublic ? 'slate' : 'amber'}>
                 {room.isPublic ? 'Public Room' : 'Private Room'}
@@ -271,7 +271,7 @@ export function GamePage() {
           )}
 
           <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
-            <div className="lg:col-span-8">
+            <div className="min-w-0 lg:col-span-8">
               <GameStagePlaceholder
                 isCurrentDrawer={isCurrentDrawer}
                 currentDrawer={currentDrawer}
@@ -293,7 +293,7 @@ export function GamePage() {
               />
             </div>
 
-            <div className="space-y-6 lg:col-span-4">
+            <div className="min-w-0 space-y-6 lg:col-span-4">
               <GuessInputPanel
                 isCurrentDrawer={isCurrentDrawer}
                 wordPhase={wordState.phase}

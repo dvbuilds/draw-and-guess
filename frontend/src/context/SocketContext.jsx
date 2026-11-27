@@ -20,8 +20,8 @@ export function SocketProvider({ children, autoConnect = true }) {
 
     const handleDisconnect = (reason) => {
       setSocketId(null);
-      // io client disconnect is intentional; transport/server disconnects will auto-reconnect
-      if (reason === 'io client disconnect') {
+      // io client/server disconnects do not auto-reconnect; transport drops do
+      if (reason === 'io client disconnect' || reason === 'io server disconnect') {
         setStatus('disconnected');
       } else {
         setStatus('reconnecting');
@@ -50,7 +50,9 @@ export function SocketProvider({ children, autoConnect = true }) {
     socket.io.on('reconnect_attempt', handleReconnectAttempt);
     socket.io.on('reconnect_failed', handleReconnectFailed);
 
-    if (autoConnect && !socket.connected) {
+    if (socket.connected) {
+      handleConnect();
+    } else if (autoConnect) {
       setStatus('connecting');
       socket.connect();
     }

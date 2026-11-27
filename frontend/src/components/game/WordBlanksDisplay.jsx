@@ -62,16 +62,16 @@ export function WordBlanksDisplay({
       {/* Render blanks and progressive hint letters grouped by word */}
       <div
         aria-label={`Word blanks, ${publicWord.wordLength} letters`}
-        className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-2xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4"
+        className="flex flex-wrap items-center justify-center gap-x-3.5 gap-y-2 rounded-2xl border-2 border-slate-200 bg-slate-50/80 px-3 py-3 sm:gap-x-5 sm:px-4 sm:py-4"
       >
         {wordGroups.map((group, groupIdx) => (
-          <div key={`${groupIdx}-${group.length}`} className="flex items-center gap-1.5">
+          <div key={`${groupIdx}-${group.length}`} className="flex flex-wrap items-center justify-center gap-1 sm:gap-1.5">
             {[...group].map((char, charIdx) => {
               const isRevealed = char !== '_';
               return (
                 <span
                   key={`${groupIdx}-${charIdx}`}
-                  className={`inline-flex h-8 w-6 items-center justify-center border-b-2 font-mono text-lg font-black ${
+                  className={`inline-flex h-7 w-4.5 items-center justify-center border-b-2 font-mono text-base font-black sm:h-8 sm:w-6 sm:text-lg ${
                     isRevealed
                       ? 'border-indigo-500 text-indigo-700'
                       : 'border-slate-800 text-slate-900'

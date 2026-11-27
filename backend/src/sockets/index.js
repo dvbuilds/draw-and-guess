@@ -33,6 +33,24 @@ function registerRequest(socket, eventName, handler) {
   });
 }
 
+function registerDrawingStream(socket, handler) {
+  // Socket.IO preserves packet order, but async Mongo lookups can complete out
+  // of order. Serialize validation/broadcast work without making the drawer
+  // wait for an acknowledgement round trip for every segment.
+  let queue = Promise.resolve();
+  socket.on('drawing:stroke', (payload, ack) => {
+    queue = queue.then(() => handler(payload)).then((data) => {
+      if (typeof ack === 'function') ack({ success: true, data });
+    }).catch((err) => {
+      console.warn(`[socket] drawing:stroke failed: ${err.message}`);
+      const error = socketError(err);
+      if (typeof ack === 'function') ack({ success: false, error });
+      else socket.emit('lobby_error', error);
+    });
+  });
+  return () => queue;
+}
+
 export function initSocket(httpServer) {
   const io = new Server(httpServer, {
     cors: { origin: env.CLIENT_URL, credentials: true },
@@ -66,9 +84,15 @@ export function initSocket(httpServer) {
     registerRequest(socket, 'vote_kick:start', (payload) => startVoteKick({ socket, io, payload }));
     registerRequest(socket, 'vote_kick:cast', (payload) => castVoteKick({ socket, io, payload }));
     registerRequest(socket, 'announcement:send', (payload) => broadcastAnnouncement({ socket, io, payload }));
-    registerRequest(socket, 'drawing:stroke', (payload) => addDrawingSegment({ socket, io, payload }));
-    registerRequest(socket, 'drawing:undo', () => undoDrawing({ socket, io }));
-    registerRequest(socket, 'drawing:clear', () => clearDrawing({ socket, io }));
+    const waitForDrawing = registerDrawingStream(socket, (payload) => addDrawingSegment({ socket, io, payload }));
+    registerRequest(socket, 'drawing:undo', async () => {
+      await waitForDrawing();
+      return undoDrawing({ socket, io });
+    });
+    registerRequest(socket, 'drawing:clear', async () => {
+      await waitForDrawing();
+      return clearDrawing({ socket, io });
+    });
     registerRequest(socket, 'drawing:sync', () => syncDrawing({ socket }));
 
     socket.on('disconnect', (reason) => {

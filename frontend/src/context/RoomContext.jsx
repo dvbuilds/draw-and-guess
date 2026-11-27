@@ -57,6 +57,7 @@ export function RoomProvider({ children }) {
   const [room, setRoom] = useState(initialStored);
   const [players, setPlayers] = useState([]);
   const [lobbyStatus, setLobbyStatus] = useState('idle'); // idle | joining | joined | error
+  const [joinedRoomCode, setJoinedRoomCode] = useState(null);
   const [syncedGameState, setSyncedGameState] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
@@ -125,6 +126,7 @@ export function RoomProvider({ children }) {
         }))
       );
       setLobbyStatus('idle');
+      setJoinedRoomCode(null);
       setSyncedGameState(null);
       setActivityLog([]);
       setChatMessages([]);
@@ -165,6 +167,7 @@ export function RoomProvider({ children }) {
         }))
       );
       setLobbyStatus('idle');
+      setJoinedRoomCode(null);
       setSyncedGameState(null);
       setActivityLog([]);
       setChatMessages([]);
@@ -187,17 +190,23 @@ export function RoomProvider({ children }) {
       const targetCode = (roomCode || room?.roomCode || '').trim().toUpperCase();
       const targetToken = inviteToken ?? room?.inviteToken ?? '';
 
-      if (!targetCode || !playerId || !identityToken || !isConnected) {
+      if (!targetCode || !playerId || !identityToken || !socket.connected) {
         return null;
       }
       if (joinInFlightRef.current) return null;
 
       joinInFlightRef.current = true;
+      const previousCode = activeLobbyRef.current.roomCode;
       activeLobbyRef.current = { roomCode: targetCode, inviteToken: targetToken };
       setLobbyStatus('joining');
+      setJoinedRoomCode(null);
       setError(null);
 
       try {
+        if (previousCode && previousCode !== targetCode && socket.connected) {
+          await leaveLobbySocket('switched_room').catch(() => {});
+        }
+
         const result = await joinLobbySocket({
           roomCode: targetCode,
           playerId,
@@ -207,6 +216,7 @@ export function RoomProvider({ children }) {
 
         setPlayers(deduplicatePlayers(result.players));
         setSyncedGameState(result.gameState ?? null);
+        setJoinedRoomCode(result?.roomCode || targetCode);
         setLobbyStatus('joined');
 
         if (result.reconnected) {
@@ -215,6 +225,8 @@ export function RoomProvider({ children }) {
 
         return result;
       } catch (err) {
+        activeLobbyRef.current = { roomCode: null, inviteToken: null };
+        setJoinedRoomCode(null);
         setLobbyStatus('error');
         setError({
           code: err?.code || 'LOBBY_JOIN_FAILED',
@@ -225,7 +237,7 @@ export function RoomProvider({ children }) {
         joinInFlightRef.current = false;
       }
     },
-    [room, playerId, identityToken, isConnected, appendActivity]
+    [room, playerId, identityToken, socket, appendActivity]
   );
 
   const leaveLobby = useCallback(
@@ -242,6 +254,7 @@ export function RoomProvider({ children }) {
         setRoom(null);
         setPlayers([]);
         setLobbyStatus('idle');
+        setJoinedRoomCode(null);
         setSyncedGameState(null);
         setActivityLog([]);
         setChatMessages([]);
@@ -266,6 +279,7 @@ export function RoomProvider({ children }) {
     setRoom(null);
     setPlayers([]);
     setLobbyStatus('idle');
+    setJoinedRoomCode(null);
     setSyncedGameState(null);
     setActivityLog([]);
     setChatMessages([]);
@@ -501,6 +515,7 @@ export function RoomProvider({ children }) {
       setRoom(null);
       setPlayers([]);
       setLobbyStatus('idle');
+      setJoinedRoomCode(null);
       setActiveVoteKick(null);
       setRemovedState({
         roomCode: event?.roomCode || null,
@@ -594,9 +609,16 @@ export function RoomProvider({ children }) {
       }
     };
 
+    const handleDisconnect = () => {
+      setJoinedRoomCode(null);
+      setLobbyStatus((prev) => (prev === 'joined' || prev === 'joining' ? 'idle' : prev));
+    };
+
     socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
     return () => {
       socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
     };
   }, [socket, playerId, identityToken, connectToLobby]);
 
@@ -625,6 +647,7 @@ export function RoomProvider({ children }) {
       isHost,
       connectedPlayersCount,
       lobbyStatus,
+      joinedRoomCode,
       syncedGameState,
       socketStatus,
       isSocketConnected: isConnected,
@@ -672,6 +695,7 @@ export function RoomProvider({ children }) {
       isHost,
       connectedPlayersCount,
       lobbyStatus,
+      joinedRoomCode,
       syncedGameState,
       socketStatus,
       isConnected,

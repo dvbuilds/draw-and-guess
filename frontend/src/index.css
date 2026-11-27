@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
 @layer base {
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
   body {
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
@@ -10,4 +16,81 @@
   background-color: #fffdf7;
   background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
   background-size: 22px 22px;
+}
+
+@keyframes sketchFloat {
+  0%,
+  100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(3deg);
+  }
+}
+
+@keyframes sketchBounce {
+  0%,
+  100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-5px) scale(1.03);
+  }
+}
+
+@keyframes sketchDraw {
+  0% {
+    stroke-dashoffset: 240;
+  }
+  45%,
+  80% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 240;
+  }
+}
+
+@keyframes sketchWiggle {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(6deg);
+  }
+}
+
+.animate-sketch-float {
+  animation: sketchFloat 4.2s ease-in-out infinite;
+}
+
+.animate-sketch-float-delayed {
+  animation: sketchFloat 4.8s ease-in-out 1.1s infinite;
+}
+
+.animate-sketch-bounce {
+  animation: sketchBounce 3.2s ease-in-out infinite;
+}
+
+.animate-sketch-draw {
+  stroke-dasharray: 240;
+  stroke-dashoffset: 240;
+  animation: sketchDraw 5.5s ease-in-out infinite;
+}
+
+.animate-sketch-wiggle {
+  transform-origin: center;
+  animation: sketchWiggle 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-sketch-float,
+  .animate-sketch-float-delayed,
+  .animate-sketch-bounce,
+  .animate-sketch-draw,
+  .animate-sketch-wiggle {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
 }

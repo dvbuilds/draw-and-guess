@@ -129,7 +129,7 @@ export function LobbyPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="indigo">Phase 4 · Multiplayer Lobby</Badge>
+            <Badge variant="indigo">Multiplayer Lobby</Badge>
             {room && (
               <Badge variant={room.isPublic ? 'slate' : 'amber'}>
                 {room.isPublic ? 'Public Room' : 'Private Room'}
@@ -228,7 +228,7 @@ export function LobbyPage() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
           {/* Left Column: Live Player Roster & Room Chat */}
-          <div className="space-y-6 lg:col-span-7">
+          <div className="min-w-0 space-y-6 lg:col-span-7">
             <LobbyPlayerList
               players={players}
               currentPlayerId={playerId}
@@ -248,7 +248,7 @@ export function LobbyPage() {
           </div>
 
           {/* Right Column: Host Controls, Invite Link & Room Summary */}
-          <div className="space-y-6 lg:col-span-5">
+          <div className="min-w-0 space-y-6 lg:col-span-5">
             <LobbyHostControls
               isHost={isHost}
               hostPlayer={hostPlayer}

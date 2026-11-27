@@ -73,7 +73,7 @@ export function ResultsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <Badge variant="emerald" className="mb-1.5">
-            Phase 8 · Final Results
+            Final Results
           </Badge>
           <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
             Match Results · <span className="font-mono text-indigo-600">{roomCode}</span>

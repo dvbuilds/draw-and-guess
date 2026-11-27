@@ -6,6 +6,7 @@ export const SUPPORTED_LANGUAGES = [
 
 export const TRANSLATIONS = {
   en: {
+    appTagline: 'Real-time Multiplayer Sketch Party',
     navHome: 'Home',
     navCreate: 'Create Room',
     navJoin: 'Join Room',
@@ -20,6 +21,7 @@ export const TRANSLATIONS = {
     announcementsTitle: 'Host Announcement',
   },
   es: {
+    appTagline: 'Juego Multijugador de Dibujo en Vivo',
     navHome: 'Inicio',
     navCreate: 'Crear Sala',
     navJoin: 'Unirse',
@@ -34,6 +36,7 @@ export const TRANSLATIONS = {
     announcementsTitle: 'Anuncio del Anfitrión',
   },
   fr: {
+    appTagline: 'Jeu de Dessin Multijoueur en Direct',
     navHome: 'Accueil',
     navCreate: 'Créer un Salon',
     navJoin: 'Rejoindre',

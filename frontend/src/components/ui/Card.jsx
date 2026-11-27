@@ -7,7 +7,7 @@ const VARIANTS = {
 export function Card({ children, variant = 'default', className = '' }) {
   return (
     <div
-      className={`rounded-2xl border-2 p-5 sm:p-6 ${
+      className={`rounded-2xl border-2 p-4 sm:p-6 ${
         VARIANTS[variant] || VARIANTS.default
       } ${className}`}
     >

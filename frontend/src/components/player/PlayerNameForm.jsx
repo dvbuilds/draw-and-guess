@@ -4,15 +4,12 @@ import {
   DEFAULT_ROOM_ID,
   DISPLAY_NAME_MAX_LENGTH,
   validateDisplayNameInput,
-  validateRoomIdInput,
 } from '../../utils/playerValidation.js';
 
 export function PlayerNameForm({ onSubmit, isSubmitting = false, serverError = null, onClearServerError }) {
   const [displayName, setDisplayName] = useState('');
-  const [roomId, setRoomId] = useState(DEFAULT_ROOM_ID);
-  const [showRoomContext, setShowRoomContext] = useState(false);
-  const [touched, setTouched] = useState({ displayName: false, roomId: false });
-  const [fieldErrors, setFieldErrors] = useState({ displayName: null, roomId: null });
+  const [touched, setTouched] = useState(false);
+  const [fieldError, setFieldError] = useState(null);
 
   const trimmedLength = displayName.trim().length;
   const isOverLimit = trimmedLength > DISPLAY_NAME_MAX_LENGTH;
@@ -21,50 +18,23 @@ export function PlayerNameForm({ onSubmit, isSubmitting = false, serverError = n
     const next = e.target.value;
     setDisplayName(next);
     if (serverError) onClearServerError?.();
-    if (touched.displayName) {
-      setFieldErrors((prev) => ({
-        ...prev,
-        displayName: validateDisplayNameInput(next).error,
-      }));
-    }
-  };
-
-  const handleRoomChange = (e) => {
-    const next = e.target.value;
-    setRoomId(next);
-    if (serverError) onClearServerError?.();
-    if (touched.roomId) {
-      setFieldErrors((prev) => ({
-        ...prev,
-        roomId: validateRoomIdInput(next).error,
-      }));
+    if (touched) {
+      setFieldError(validateDisplayNameInput(next).error);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setTouched({ displayName: true, roomId: true });
+    setTouched(true);
 
     const nameCheck = validateDisplayNameInput(displayName);
-    const roomCheck = validateRoomIdInput(roomId);
-
-    setFieldErrors({
-      displayName: nameCheck.error,
-      roomId: roomCheck.error,
-    });
-
-    if (!roomCheck.valid) {
-      setShowRoomContext(true);
-    }
-
-    if (!nameCheck.valid || !roomCheck.valid) {
-      return;
-    }
+    setFieldError(nameCheck.error);
+    if (!nameCheck.valid) return;
 
     try {
       await onSubmit({
         displayName: nameCheck.value,
-        roomId: roomCheck.value,
+        roomId: DEFAULT_ROOM_ID,
       });
     } catch {
       // Error surfaced via serverError prop from PlayerContext
@@ -81,17 +51,14 @@ export function PlayerNameForm({ onSubmit, isSubmitting = false, serverError = n
         type="text"
         autoComplete="nickname"
         placeholder="e.g. SketchMaster"
-        label="Guest Display Name"
+        label="Guest Nickname"
         value={displayName}
         onChange={handleNameChange}
         onBlur={() => {
-          setTouched((prev) => ({ ...prev, displayName: true }));
-          setFieldErrors((prev) => ({
-            ...prev,
-            displayName: validateDisplayNameInput(displayName).error,
-          }));
+          setTouched(true);
+          setFieldError(validateDisplayNameInput(displayName).error);
         }}
-        error={fieldErrors.displayName}
+        error={fieldError}
         hint="1–24 characters: letters, numbers, spaces, underscores, or hyphens."
         rightAddon={
           <span
@@ -103,37 +70,6 @@ export function PlayerNameForm({ onSubmit, isSubmitting = false, serverError = n
           </span>
         }
       />
-
-      <div className="space-y-2">
-        <button
-          type="button"
-          onClick={() => setShowRoomContext((prev) => !prev)}
-          className="text-xs font-semibold text-indigo-600 hover:text-indigo-500 cursor-pointer"
-        >
-          {showRoomContext ? 'Hide room scope' : `Room scope: ${roomId || DEFAULT_ROOM_ID} (change)`}
-        </button>
-
-        {showRoomContext && (
-          <Input
-            id="guest-room-id"
-            name="roomId"
-            type="text"
-            placeholder={DEFAULT_ROOM_ID}
-            label="Room Scope ID"
-            value={roomId}
-            onChange={handleRoomChange}
-            onBlur={() => {
-              setTouched((prev) => ({ ...prev, roomId: true }));
-              setFieldErrors((prev) => ({
-                ...prev,
-                roomId: validateRoomIdInput(roomId).error,
-              }));
-            }}
-            error={fieldErrors.roomId}
-            hint="Backend scopes unique names per room ID (letters, numbers, _ and -). Phase 3 will supply active rooms."
-          />
-        )}
-      </div>
 
       {serverError && (
         <div
@@ -147,14 +83,14 @@ export function PlayerNameForm({ onSubmit, isSubmitting = false, serverError = n
           <p>{serverError.message}</p>
           {isDuplicateError && (
             <p className="mt-1 font-normal text-amber-800">
-              Try a different display name or change the room scope above.
+              Try a slightly different nickname to stand out in the room.
             </p>
           )}
         </div>
       )}
 
       <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting}>
-        {isSubmitting ? 'Creating Guest Identity...' : 'Continue as Guest'}
+        {isSubmitting ? 'Joining Party...' : 'Start Playing as Guest'}
       </Button>
     </form>
   );

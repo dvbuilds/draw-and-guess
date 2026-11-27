@@ -87,9 +87,9 @@ export function RoomJoinedSummary({ room, currentPlayerId, onReset }) {
         </ul>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-600">
-        <span>Real-time lobby &amp; game start controls will arrive in Phase 4.</span>
-        <Badge variant="slate">Phase 3 Complete</Badge>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3.5 py-2.5 text-xs text-emerald-900">
+        <span>Your spot is reserved — enter the live lobby to chat and start playing.</span>
+        <Badge variant="emerald">Room Ready</Badge>
       </div>
 
       <div className="flex flex-wrap gap-3">

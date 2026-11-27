@@ -52,7 +52,7 @@ export function CountdownTimer({ timerState, wordPhase = 'idle' }) {
       : 'bg-indigo-600';
 
   return (
-    <div className="min-w-36 space-y-1">
+    <div className="w-full min-w-0 space-y-1 sm:w-auto sm:min-w-36">
       <div
         role="timer"
         aria-live="off"

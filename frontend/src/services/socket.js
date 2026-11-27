@@ -114,7 +114,12 @@ export function sendAnnouncementSocket(message) {
 }
 
 export function sendDrawingStrokeSocket(segment) {
-  return emitWithAck('drawing:stroke', segment);
+  const socket = getSocket();
+  if (!socket.connected) return false;
+  // Stroke segments are ordered and validated by the server stream handler.
+  // Avoid a round trip acknowledgement for each high-frequency packet.
+  socket.emit('drawing:stroke', segment);
+  return true;
 }
 
 export function undoDrawingSocket() {

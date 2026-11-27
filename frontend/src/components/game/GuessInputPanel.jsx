@@ -69,7 +69,7 @@ export function GuessInputPanel({
       ) : (
         <form onSubmit={handleSubmit} noValidate className="space-y-2.5">
           <div className="flex gap-2 items-start">
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               <Input
                 id="guess-input"
                 name="guess"

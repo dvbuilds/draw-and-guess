@@ -158,7 +158,7 @@ export function RoomCreatedSummary({ room, onCreateAnother }) {
           </strong>{' '}
           ({room.members?.length || 1}/{settings.maxPlayers} joined)
         </span>
-        <Badge variant="slate">Lobby arrives in Phase 4</Badge>
+        <Badge variant="emerald">Lobby Ready</Badge>
       </div>
 
       <div className="flex flex-wrap gap-3">

@@ -128,7 +128,7 @@ export function JoinRoomPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <Badge variant="indigo" className="mb-1.5">
-            Phase 3 · Room Management
+            Enter a Match
           </Badge>
           <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
             Join a Room
